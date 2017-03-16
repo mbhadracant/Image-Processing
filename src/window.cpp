@@ -2,7 +2,6 @@
 #include <wx/image.h>
 #include <wx/dcbuffer.h>
 #include <iostream>
-#include <window.h>
 #include <fstream>
 #include <iostream>
 #include <cstdlib>
@@ -11,27 +10,32 @@
 #include <string>
 #include <math.h>
 #include <map>
+#include <stack>
+#include <window.h>
 
 using namespace std;
 
-static const wxChar *FILETYPES = _T("All files (*.*)|*.*");
-static const wxChar *RAW_FILETYPE = _T("RAW files (*.raw)|*.raw");
+static const wxChar* FILETYPES = _T("All files (*.*)|*.*");
+static const wxChar* RAW_FILETYPE = _T("RAW files (*.raw)|*.raw");
 
 IMPLEMENT_APP(BasicApplication)
 
 bool BasicApplication::OnInit()
 {
     wxInitAllImageHandlers();
-    MyFrame *frame = new MyFrame(_("Basic Frame"), 50, 50, 800, 600);
+    MyFrame* frame = new MyFrame(_("Basic Frame"), 50, 50, 800, 600);
     frame->Show(TRUE);
     SetTopWindow(frame);
     return TRUE;
 }
 
-MyFrame::MyFrame(const wxString title, int xpos, int ypos, int width, int height): wxFrame((wxFrame *) NULL, -1, title, wxPoint(xpos, ypos), wxSize(width, height)){
+MyFrame::MyFrame(const wxString title, int xpos, int ypos, int width, int height)
+    : wxFrame((wxFrame*)NULL, -1, title, wxPoint(xpos, ypos), wxSize(width, height))
+{
+
+    canSelect = false;
 
     menuBar = new wxMenuBar;
-
 
     //###########################################################//
     //----------------------START MY MENU -----------------------//
@@ -40,10 +44,9 @@ MyFrame::MyFrame(const wxString title, int xpos, int ypos, int width, int height
     fileMenu->Append(LOAD_FILE_ID, _T("&Open file"));
     fileMenu->Append(OPEN_RAW_ID, _T("&Open RAW file")); //--->To be modified!
     fileMenu->Append(SAVE_RAW_TO_JPG, _T("&RAW Image to JPG"));
-    fileMenu->AppendSeparator();
 
     fileMenu->Append(RESET_IMAGE_ID, _T("&Reset image"));
-    fileMenu->Append(INVERT_IMAGE_ID, _T("&Invert image"));
+    fileMenu->Append(UNDO, _T("&Undo"));
 
     fileMenu->AppendSeparator();
     fileMenu->Append(SAVE_IMAGE_ID, _T("&Save image"));
@@ -55,16 +58,19 @@ MyFrame::MyFrame(const wxString title, int xpos, int ypos, int width, int height
     //----------------------END MY MENU -------------------------//
     //###########################################################//
 
+    editMenu = new wxMenu;
+    editMenu->Append(SELECT, _T("&Select"));
+    editMenu->Append(UNSELECT, _T("&Unselect"));
 
+    menuBar->Append(editMenu, _T("&Edit"));
+
+    //###########################################################//
+    //----------------------END MY MENU -------------------------//
+    //###########################################################//
 
     lab4Menu = new wxMenu;
-
-
     lab4Menu->Append(SCALE_IMAGE_ID, _T("&Scale image"));
-
     menuBar->Append(lab4Menu, _T("&Pixel Scaling"));
-
-
 
     //###########################################################//
     //----------------------END MY MENU -------------------------//
@@ -88,9 +94,7 @@ MyFrame::MyFrame(const wxString title, int xpos, int ypos, int width, int height
     //----------------------END MY MENU -------------------------//
     //###########################################################//
 
-
     lab6Menu = new wxMenu;
-
 
     lab6Menu->Append(SALT_AND_PEPPER_ID, _T("&Salt And Pepper Filter"));
     lab6Menu->Append(MIN_ID, _T("&Min Filter"));
@@ -106,11 +110,10 @@ MyFrame::MyFrame(const wxString title, int xpos, int ypos, int width, int height
 
     lab7Menu = new wxMenu;
 
-
     lab7Menu->Append(NEGATIVE_ID, _T("&Negative"));
     lab7Menu->Append(LOG_ID, _T("&Log"));
     lab7Menu->Append(POWER_ID, _T("&Power"));
-
+    lab7Menu->Append(RANDOM_LOOKUP_TABLE, _T("&Random Lookup Table"));
     menuBar->Append(lab7Menu, _T("&Point Processing"));
 
     //###########################################################//
@@ -118,12 +121,18 @@ MyFrame::MyFrame(const wxString title, int xpos, int ypos, int width, int height
     //###########################################################//
 
     lab8Menu = new wxMenu;
-
-
     lab8Menu->Append(HISTOGRAM_EQUALIZE, _T("&Equalize"));
-
-
     menuBar->Append(lab8Menu, _T("&Histogram"));
+
+    //###########################################################//
+    //----------------------END MY MENU -------------------------//
+    //###########################################################//
+
+    lab9Menu = new wxMenu;
+    lab9Menu->Append(MEAN_AND_STANDARD_DEVIATION, _T("&Mean And Standard Deviation"));
+    lab9Menu->Append(SIMPLE_THRESHOLDING, _T("&Simple Thresholding"));
+    lab9Menu->Append(AUTOMATED_THRESHOLDING, _T("&Automated Thresholding"));
+    menuBar->Append(lab9Menu, _T("&Thresholding"));
 
     //###########################################################//
     //----------------------END MY MENU -------------------------//
@@ -131,35 +140,39 @@ MyFrame::MyFrame(const wxString title, int xpos, int ypos, int width, int height
 
     SetMenuBar(menuBar);
     CreateStatusBar(3);
-    loadedImage = wxImage("../images/cateyes.png");
+    loadedImage = wxImage("../images/Lena.bmp");
     origImage = loadedImage.Copy();
+    mouseDownX = 0;
+    mouseDownY = 0;
+    mouseUpX = loadedImage.GetWidth();
+    mouseUpY = loadedImage.GetHeight();
 
     SetBackgroundStyle(wxBG_STYLE_PAINT);
-
 }
 
-MyFrame::~MyFrame() {
+MyFrame::~MyFrame()
+{
     /* release resources */
-    if(loadedImage.Ok()) {
+    if (loadedImage.Ok()) {
         loadedImage.Destroy();
     }
 
     if (origImage.Ok()) {
-      origImage.Destroy();
+        origImage.Destroy();
     }
-
 }
 
-void MyFrame::OnOpenFile(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnOpenFile(wxCommandEvent& WXUNUSED(event))
+{
 
     wxFileDialog openFileDialog(this, _T("Open file"), _T(""), _T(""), FILETYPES, wxFD_OPEN, wxDefaultPosition);
 
-    if(openFileDialog.ShowModal() == wxID_OK){
+    if (openFileDialog.ShowModal() == wxID_OK) {
         wxString filename = openFileDialog.GetFilename();
         wxString path = openFileDialog.GetPath();
         printf("Loading image form file...");
 
-        if(loadedImage.Ok()) {
+        if (loadedImage.Ok()) {
             loadedImage.Destroy();
         }
 
@@ -169,8 +182,12 @@ void MyFrame::OnOpenFile(wxCommandEvent & WXUNUSED(event)) {
 
         loadedImage = wxImage(path); //Image Loaded form file
 
-        if(loadedImage.Ok()) {
+        if (loadedImage.Ok()) {
             origImage = loadedImage.Copy();
+            mouseDownX = 0;
+            mouseDownY = 0;
+            mouseUpX = loadedImage.GetWidth();
+            mouseUpY = loadedImage.GetHeight();
             printf("Done! \n");
         }
         else {
@@ -178,9 +195,7 @@ void MyFrame::OnOpenFile(wxCommandEvent & WXUNUSED(event)) {
         }
     }
     Refresh();
-
 }
-
 
 //###########################################################//
 //-----------------------------------------------------------//
@@ -188,86 +203,87 @@ void MyFrame::OnOpenFile(wxCommandEvent & WXUNUSED(event)) {
 //-----------------------------------------------------------//
 //###########################################################//
 
-
 //INVERT IMAGE
-void MyFrame::OnInvertImage(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnUndo(wxCommandEvent& WXUNUSED(event))
+{
+    printf("Undoing...\n");
+    if(undoStack.size() > 2) {
 
-    printf("Inverting...");
-    wxImage tmpImage = loadedImage.Copy();
-    for(int i = 0; i < loadedImage.GetWidth(); i++) {
-        for(int j = 0;j < loadedImage.GetHeight(); j++) {
-            loadedImage.SetRGB(i, j, 255 - tmpImage.GetRed(i,j),
-                               255 - tmpImage.GetGreen(i,j),
-                               255 - tmpImage.GetBlue(i,j));
-        }
-    }
+      undoStack.pop();
+      loadedImage = undoStack.top();
+      Refresh();
+      origImageStack.pop();
 
-    tmpImage.Destroy();
-    printf(" Finished inverting.\n");
-    Refresh();
+      undoStack.pop();
+
+  }
+    printf("Finished Undoing.\n");
 }
 
-int round_int( double r ) {
+int round_int(double r)
+{
     return (r > 0.0) ? (r + 0.5) : (r - 0.5);
 }
 
 //IMAGE SCALEING
-void MyFrame::OnScaleImage(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnScaleImage(wxCommandEvent& WXUNUSED(event))
+{
 
     printf("Scaling...\n");
     wxImage tmpImage = loadedImage.Copy();
     float scaleFact = 0;
     double input = 0;
-    unsigned char r,g,b;
+    unsigned char r, g, b;
     //xFileDialog openFileDialog(this, _T("Open file"), _T(""), _T(""), FILETYPES, wxFD_OPEN, wxDefaultPosition);
 
     wxString valueTyped;
     wxTextEntryDialog myDialog(this, _("Enter the pixel scale factor:"), _("Pixel Scaling"), _(""));
-    if ( myDialog.ShowModal() == wxID_OK )
-    {
+    if (myDialog.ShowModal() == wxID_OK) {
         valueTyped = myDialog.GetValue();
-        if(valueTyped.ToDouble(&input)) {
-          scaleFact = (float)input;
-        } else {
-          cout << "Invalid Input: " << valueTyped << endl;
-          return;
+        if (valueTyped.ToDouble(&input)) {
+            scaleFact = (float)input;
         }
-    } else {
-      return;
+        else {
+            cout << "Invalid Input: " << valueTyped << endl;
+            return;
+        }
+    }
+    else {
+        return;
     }
 
-    for(int i=0; i < loadedImage.GetWidth(); i++) {
-        for(int j=0; j < loadedImage.GetHeight(); j++) {
-          r = tmpImage.GetRed(i,j);   // red pixel value
-          g = tmpImage.GetGreen(i,j); // green pixel value
-          b = tmpImage.GetBlue(i,j); // blue pixel value
+    for (int i = mouseDownX; i < mouseUpX; i++) {
+        for (int j = mouseDownY; j < mouseUpY; j++) {
+            r = tmpImage.GetRed(i, j); // red pixel value
+            g = tmpImage.GetGreen(i, j); // green pixel value
+            b = tmpImage.GetBlue(i, j); // blue pixel value
 
-        //printf("(%d,%d) [r = %d  | g = %d | b = %d] \n",i,j,(unsigned)r,(unsigned)g,(unsigned)b);
+            //printf("(%d,%d) [r = %d  | g = %d | b = %d] \n",i,j,(unsigned)r,(unsigned)g,(unsigned)b);
             unsigned char newR, newG, newB;
 
-
-            if((r > 255 / scaleFact)) {
-              newR = 255;
-            } else {
-              newR = r * scaleFact;
+            if ((r > 255 / scaleFact)) {
+                newR = 255;
             }
-            if((g > 255 / scaleFact)) {
-              newG = 255;
-            } else {
-              newG = g * scaleFact;
+            else {
+                newR = r * scaleFact;
             }
-            if((b > 255 / scaleFact)) {
-              newB = 255;
-            } else {
-              newB = b * scaleFact;
+            if ((g > 255 / scaleFact)) {
+                newG = 255;
+            }
+            else {
+                newG = g * scaleFact;
+            }
+            if ((b > 255 / scaleFact)) {
+                newB = 255;
+            }
+            else {
+                newB = b * scaleFact;
             }
 
             loadedImage.SetRGB(i, j, newR,
-                               newG,
-                               newB);
-
-
-       }
+                newG,
+                newB);
+        }
     }
 
     tmpImage.Destroy();
@@ -275,116 +291,108 @@ void MyFrame::OnScaleImage(wxCommandEvent & WXUNUSED(event)) {
     Refresh();
 }
 
-void MyFrame::OnOpenRawFile(wxCommandEvent & WXUNUSED(event)) {
-  printf("Opening Raw Image...\n");
+void MyFrame::OnOpenRawFile(wxCommandEvent& WXUNUSED(event))
+{
+    printf("Opening Raw Image...\n");
 
-  wxFileDialog openFileDialog(this, _T("Open file"), _T(""), _T(""), RAW_FILETYPE, wxFD_OPEN, wxDefaultPosition);
+    wxFileDialog openFileDialog(this, _T("Open file"), _T(""), _T(""), RAW_FILETYPE, wxFD_OPEN, wxDefaultPosition);
 
-  if(openFileDialog.ShowModal() == wxID_OK){
-      wxString name = openFileDialog.GetFilename();
-      wxString path = openFileDialog.GetPath();
+    if (openFileDialog.ShowModal() == wxID_OK) {
+        wxString name = openFileDialog.GetFilename();
+        wxString path = openFileDialog.GetPath();
 
-      string filepath = "../images/";
-      string filename = name.ToStdString();
-      filepath += filename;
+        string filepath = "../images/";
+        string filename = name.ToStdString();
+        filepath += filename;
 
-      if(loadedImage.Ok()) {
-          loadedImage.Destroy();
-      }
+        if (loadedImage.Ok()) {
+            loadedImage.Destroy();
+        }
 
-      if (origImage.Ok()) {
-          origImage.Destroy();
-      }
+        if (origImage.Ok()) {
+            origImage.Destroy();
+        }
 
-      if(filename == "Cameraman.raw") {
-        loadedImage = wxImage(256,256,true);
-      } else {
-        loadedImage = wxImage(512,512,true);
-      }
+        if (filename == "Cameraman.raw") {
+            loadedImage = wxImage(256, 256, true);
+        }
+        else {
+            loadedImage = wxImage(512, 512, true);
+        }
 
+        if (loadedImage.Ok()) {
+            origImage = loadedImage.Copy();
+        }
 
-      if(loadedImage.Ok()) {
-          origImage = loadedImage.Copy();
-      }
+        //load raw file
+        int height = loadedImage.GetHeight();
+        int width = loadedImage.GetWidth();
+        unsigned char bufferImage[height][width];
+        FILE* pFile;
+        pFile = fopen(filepath.c_str(), "r");
+        fread(&bufferImage, height, width, pFile);
 
+        for (int i = 0; i < loadedImage.GetWidth(); i++) {
+            for (int j = 0; j < loadedImage.GetHeight(); j++) {
+                // SAVE THE RGB VALUES
+                loadedImage.SetRGB(i, j, (unsigned)bufferImage[i][j], (unsigned)bufferImage[i][j], (unsigned)bufferImage[i][j]);
+            }
+        }
 
-      //load raw file
-      int height = loadedImage.GetHeight();
-      int width = loadedImage.GetWidth();
-      unsigned char bufferImage[height][width];
-      FILE * pFile;
-      pFile = fopen(filepath.c_str(), "r");
-      fread(&bufferImage, height,width , pFile);
-
-
-      for(int i=0; i< loadedImage.GetWidth(); i++) {
-          for(int j=0;j< loadedImage.GetHeight(); j++){
-            // SAVE THE RGB VALUES
-            loadedImage.SetRGB(i, j, (unsigned)bufferImage[i][j], (unsigned)bufferImage[i][j], (unsigned)bufferImage[i][j]);
-          }
-      }
-
-      loadedImage = loadedImage.Rotate90(true);
-
+        loadedImage = loadedImage.Rotate90(true);
     }
 
-
-
-  printf("Done\n");
-  Refresh();
+    printf("Done\n");
+    Refresh();
 }
 
-void MyFrame::OnConvertRawToJPG(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnConvertRawToJPG(wxCommandEvent& WXUNUSED(event))
+{
 
-  printf("Opening Raw Image...\n");
-#include <algorithm>
-  wxFileDialog openFileDialog(this, _T("Open file"), _T(""), _T(""), RAW_FILETYPE, wxFD_OPEN, wxDefaultPosition);
+    printf("Opening Raw Image...\n");
+    wxFileDialog openFileDialog(this, _T("Open file"), _T(""), _T(""), RAW_FILETYPE, wxFD_OPEN, wxDefaultPosition);
 
-  if(openFileDialog.ShowModal() == wxID_OK){
-      wxString name = openFileDialog.GetFilename();
-      wxString path = openFileDialog.GetPath();
+    if (openFileDialog.ShowModal() == wxID_OK) {
+        wxString name = openFileDialog.GetFilename();
+        wxString path = openFileDialog.GetPath();
 
-      string filepath = "../images/";
-      string filename = name.ToStdString();
-      filepath += filename;
+        string filepath = "../images/";
+        string filename = name.ToStdString();
+        filepath += filename;
 
-      if(filename == "Cameraman.raw") {
-        loadedImage = wxImage(256,256,true);
-      } else {
-        loadedImage = wxImage(512,512,true);
-      }
+        if (filename == "Cameraman.raw") {
+            loadedImage = wxImage(256, 256, true);
+        }
+        else {
+            loadedImage = wxImage(512, 512, true);
+        }
 
-      //load raw file
-      int height = loadedImage.GetHeight();
-      int width = loadedImage.GetWidth();
-      unsigned char bufferImage[height][width];
-      FILE * pFile;
-      pFile = fopen(filepath.c_str(), "r");
-      fread(&bufferImage, height,width , pFile);
+        //load raw file
+        int height = loadedImage.GetHeight();
+        int width = loadedImage.GetWidth();
+        unsigned char bufferImage[height][width];
+        FILE* pFile;
+        pFile = fopen(filepath.c_str(), "r");
+        fread(&bufferImage, height, width, pFile);
 
+        for (int i = 0; i < loadedImage.GetWidth(); i++) {
+            for (int j = 0; j < loadedImage.GetHeight(); j++) {
+                // SAVE THE RGB VALUES
+                loadedImage.SetRGB(i, j, (unsigned)bufferImage[i][j], (unsigned)bufferImage[i][j], (unsigned)bufferImage[i][j]);
+            }
+        }
 
-      for(int i=0; i< loadedImage.GetWidth(); i++) {
-          for(int j=0;j< loadedImage.GetHeight(); j++){
-            // SAVE THE RGB VALUES
-            loadedImage.SetRGB(i, j, (unsigned)bufferImage[i][j], (unsigned)bufferImage[i][j], (unsigned)bufferImage[i][j]);
-          }
-      }
+        loadedImage = loadedImage.Rotate90(true);
 
-      loadedImage = loadedImage.Rotate90(true);
-
-      wxFileDialog
-    saveFileDialog(this, _("Save JPG file"), "", "",
-                   "JPG files (*.jpg)|*.JPG", wxFD_SAVE|wxFD_OVERWRITE_PROMPT);
-if (saveFileDialog.ShowModal() == wxID_OK) {
-    loadedImage.SaveFile(saveFileDialog.GetPath(),wxBITMAP_TYPE_JPEG);
+        wxFileDialog
+            saveFileDialog(this, _("Save JPG file"), "", "",
+                "JPG files (*.jpg)|*.JPG", wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+        if (saveFileDialog.ShowModal() == wxID_OK) {
+            loadedImage.SaveFile(saveFileDialog.GetPath(), wxBITMAP_TYPE_JPEG);
+        }
+    }
+    printf("Finished Converting.\n");
 }
-
-}
-printf("Finished Converting.\n");
-
-
-}
-
 
 //###########################################################//
 //-----------------------------------------------------------//
@@ -393,227 +401,302 @@ printf("Finished Converting.\n");
 //###########################################################//
 
 //RESET IMAGE
-void MyFrame::OnResetImage(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnResetImage(wxCommandEvent& WXUNUSED(event))
+{
 
-    printf("Reseting image...");
+    printf("Reseting image...\n");
     if (loadedImage.Ok()) {
-       loadedImage.Destroy();
+        loadedImage.Destroy();
     }
 
     if (origImage.Ok()) {
-        loadedImage = origImage.Copy();
-        Refresh();
+
+        loadedImage = origImageStack.top();
+        origImageStack.push(origImage);
+        origImageStack.pop();
+
     }
+
+    Refresh();
 
     printf("Finished Reseting.\n");
-
 }
 
+void MyFrame::OnPixelShift(wxCommandEvent& WXUNUSED(event))
+{
 
-void MyFrame::OnPixelShift(wxCommandEvent & WXUNUSED(event)) {
-
-  printf("Pixel Shifting...\n");
-  wxImage tmpImage = loadedImage.Copy();
-  long pixelShiftValue = 0;
-  unsigned char r,g,b;
-  //xFileDialog openFileDialog(this, _T("Open file"), _T(""), _T(""), FILETYPES, wxFD_OPEN, wxDefaultPosition);
-
-  wxString valueTyped;
-  wxTextEntryDialog myDialog(this, _("Enter the pixel shift value (-255 to 255):"), _("Pixel Shift"), _(""));
-  if ( myDialog.ShowModal() == wxID_OK )
-  {
-      valueTyped = myDialog.GetValue();
-      if(!valueTyped.ToLong(&pixelShiftValue)) {
+    printf("Pixel Shifting...\n");
+    wxImage tmpImage = loadedImage.Copy();
+    long pixelShiftValue = 0;
+    wxString valueTyped;
+    wxTextEntryDialog myDialog(this, _("Enter the pixel shift value (-255 to 255):"), _("Pixel Shift"), _(""));
+    if (myDialog.ShowModal() == wxID_OK) {
+        valueTyped = myDialog.GetValue();
+        if (!valueTyped.ToLong(&pixelShiftValue)) {
+            return;
+        }
+    }
+    else {
         return;
-      }
-  } else {
-    return;
-  }
-
-
-  for(int i=0; i < loadedImage.GetWidth(); i++) {
-      for(int j=0; j < loadedImage.GetHeight(); j++) {
-        r = tmpImage.GetRed(i,j);   // red pixel value
-        g = tmpImage.GetGreen(i,j); // green pixel value
-        b = tmpImage.GetBlue(i,j); // blue pixel value
-
-      //printf("(%d,%d) [r = %d  | g = %d | b = %d] \n",i,j,(unsigned)r,(unsigned)g,(unsigned)b);
-          unsigned char newR, newG, newB;
-
-          if(pixelShiftValue > 0) {
-            if ((pixelShiftValue > 0) && (r > 255 - pixelShiftValue)) {
-                newR = 255;
-                newG = 255;
-                newB = 255;
-            } else {
-              newR = pixelShiftValue + r;
-              newG = pixelShiftValue + g;
-              newB = pixelShiftValue + b;
-            }
-          }
-
-          if(pixelShiftValue < 0) {
-            if ((pixelShiftValue < 0) && (r < 0 - pixelShiftValue)) {
-              newR = 0;
-              newG = 0;
-              newB = 0;
-            } else {
-              newR = r + pixelShiftValue;
-              newG = g + pixelShiftValue;
-              newB = b + pixelShiftValue;
-            }
-          }
-
-          loadedImage.SetRGB(i, j, newR,
-                             newG,
-                             newB);
-
-
-     }
-  }
-
-  tmpImage.Destroy();
-  printf(" Finished pixel shifting.\n");
-  Refresh();
-}
-
-void MyFrame::OnAverageFilter(wxCommandEvent & WXUNUSED(event)) {
-
-  printf("Average Filter..\n");
-  wxImage tmpImage = loadedImage.Copy();
-
-  float mask[3][3] ={
-                     {1.0,1.0,1.0},
-                     {1.0,1.0,1.0},
-                     {1.0,1.0,1.0},
-                   };
-  float maskMultiplication = (float)1/(float)9;
-  float sum = 0;
-
-  for(int i = 0; i < 3; i++) {
-    for(int j = 0; j < 3; j++) {
-      sum += mask[i][j];
-      mask[i][j] = mask[i][j] * maskMultiplication;
     }
-  }
 
+    unsigned char r, g, b;
 
-  for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-      for(int j=1; j < loadedImage.GetHeight()-1; j++) {
+    for (int i = mouseDownX; i < mouseUpX; i++) {
+        for (int j = mouseDownY; j < mouseUpY; j++) {
+            r = tmpImage.GetRed(i, j); // red pixel value
+            g = tmpImage.GetGreen(i, j); // green pixel value
+            b = tmpImage.GetBlue(i, j); // blue pixel value
 
+            //printf("(%d,%d) [r = %d  | g = %d | b = %d] \n",i,j,(unsigned)r,(unsigned)g,(unsigned)b);
+            unsigned char newR, newG, newB;
 
-        double average = 0;
+            if (pixelShiftValue > 0) {
+                if ((pixelShiftValue > 0) && (r > 255 - pixelShiftValue)) {
+                    newR = 255;
+                    newG = 255;
+                    newB = 255;
+                }
+                else {
+                    newR = pixelShiftValue + r;
+                    newG = pixelShiftValue + g;
+                    newB = pixelShiftValue + b;
+                }
+            }
 
-        average += tmpImage.GetRed(i-1,j-1);
-        average += tmpImage.GetRed(i-1,j);
-        average += tmpImage.GetRed(i-1,j+1);
-        average += tmpImage.GetRed(i,j-1);
-        average += tmpImage.GetRed(i,j);
-        average += tmpImage.GetRed(i,j+1);
-        average += tmpImage.GetRed(i+1,j-1);
-        average += tmpImage.GetRed(i+1,j);
-        average += tmpImage.GetRed(i+1,j+1);
-        float value = average/sum;
+            if (pixelShiftValue < 0) {
+                if ((pixelShiftValue < 0) && (r < 0 - pixelShiftValue)) {
+                    newR = 0;
+                    newG = 0;
+                    newB = 0;
+                }
+                else {
+                    newR = r + pixelShiftValue;
+                    newG = g + pixelShiftValue;
+                    newB = b + pixelShiftValue;
+                }
+            }
 
-          loadedImage.SetRGB(i, j, value,
-                             value,
-                             value);
-
-     }
-  }
-
-  tmpImage.Destroy();
-  printf(" Finished Average Filter.\n");
-  Refresh();
-}
-
-void MyFrame::OnWeightedAverageFilter(wxCommandEvent & WXUNUSED(event)) {
-
-  printf("Average Weighted Filter..\n");
-  wxImage tmpImage = loadedImage.Copy();
-
-  float mask[3][3] ={
-                     {1.0,2.0,1.0},
-                     {2.0,4.0,2.0},
-                     {1.0,2.0,1.0},
-                   };
-
-  float maskMultiplication = (float)1/(float)16;
-  float sum = 0;
-  for(int i = 0; i < 3; i++) {
-    for(int j = 0; j < 3; j++) {
-      sum += mask[i][j];
-      mask[i][j] = mask[i][j] * maskMultiplication;
+            loadedImage.SetRGB(i, j, newR,
+                newG,
+                newB);
+        }
     }
-  }
 
-  for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-      for(int j=1; j < loadedImage.GetHeight()-1; j++) {
-
-        double average = 0;
-
-        average += tmpImage.GetRed(i-1,j-1);
-        average += tmpImage.GetRed(i-1,j);
-        average += tmpImage.GetRed(i-1,j+1);
-        average += tmpImage.GetRed(i,j-1);
-        average += tmpImage.GetRed(i,j);
-        average += tmpImage.GetRed(i,j+1);
-        average += tmpImage.GetRed(i+1,j-1);
-        average += tmpImage.GetRed(i+1,j);
-        average += tmpImage.GetRed(i+1,j+1);
-        float value = average/sum;
-
-          loadedImage.SetRGB(i, j, value,
-                             value,
-                             value);
-
-     }
-  }
-
-  tmpImage.Destroy();
-  printf(" Finished Weighted Average Filter.\n");
-  Refresh();
+    tmpImage.Destroy();
+    printf(" Finished pixel shifting.\n");
+    Refresh();
 }
 
-void MyFrame::On4NeighbourFilter(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnAverageFilter(wxCommandEvent& WXUNUSED(event))
+{
+
+    printf("Average Filter..\n");
+    wxImage tmpImage = loadedImage.Copy();
+
+    float mask[3][3] = {
+        { 1.0, 1.0, 1.0 },
+        { 1.0, 1.0, 1.0 },
+        { 1.0, 1.0, 1.0 },
+    };
+    float maskMultiplication = (float)1 / (float)9;
+    float sum = 0;
+
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            sum += mask[i][j];
+            mask[i][j] = mask[i][j] * maskMultiplication;
+        }
+    }
+
+    for (int i = mouseDownX+1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY+1; j < mouseUpY - 1; j++) {
+
+            double average = 0;
+
+            average += tmpImage.GetRed(i - 1, j - 1);
+            average += tmpImage.GetRed(i - 1, j);
+            average += tmpImage.GetRed(i - 1, j + 1);
+            average += tmpImage.GetRed(i, j - 1);
+            average += tmpImage.GetRed(i, j);
+            average += tmpImage.GetRed(i, j + 1);
+            average += tmpImage.GetRed(i + 1, j - 1);
+            average += tmpImage.GetRed(i + 1, j);
+            average += tmpImage.GetRed(i + 1, j + 1);
+            float red = average / sum;
+
+            average = 0;
+
+            average += tmpImage.GetGreen(i - 1, j - 1);
+            average += tmpImage.GetGreen(i - 1, j);
+            average += tmpImage.GetGreen(i - 1, j + 1);
+            average += tmpImage.GetGreen(i, j - 1);
+            average += tmpImage.GetGreen(i, j);
+            average += tmpImage.GetGreen(i, j + 1);
+            average += tmpImage.GetGreen(i + 1, j - 1);
+            average += tmpImage.GetGreen(i + 1, j);
+            average += tmpImage.GetGreen(i + 1, j + 1);
+            float green = average / sum;
+
+            average = 0;
+
+            average += tmpImage.GetBlue(i - 1, j - 1);
+            average += tmpImage.GetBlue(i - 1, j);
+            average += tmpImage.GetBlue(i - 1, j + 1);
+            average += tmpImage.GetBlue(i, j - 1);
+            average += tmpImage.GetBlue(i, j);
+            average += tmpImage.GetBlue(i, j + 1);
+            average += tmpImage.GetBlue(i + 1, j - 1);
+            average += tmpImage.GetBlue(i + 1, j);
+            average += tmpImage.GetBlue(i + 1, j + 1);
+            float blue = average / sum;
+
+            loadedImage.SetRGB(i, j, red,
+                green,
+                blue);
+        }
+    }
+
+    tmpImage.Destroy();
+    printf(" Finished Average Filter.\n");
+    Refresh();
+}
+
+void MyFrame::OnWeightedAverageFilter(wxCommandEvent& WXUNUSED(event))
+{
+
+    printf("Average Weighted Filter..\n");
+    wxImage tmpImage = loadedImage.Copy();
+
+    float mask[3][3] = {
+        { 1.0, 2.0, 1.0 },
+        { 2.0, 4.0, 2.0 },
+        { 1.0, 2.0, 1.0 },
+    };
+
+    float maskMultiplication = (float)1 / (float)16;
+    float sum = 0;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            sum += mask[i][j];
+            mask[i][j] = mask[i][j] * maskMultiplication;
+        }
+    }
+
+    for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
+
+            double average = 0;
+
+            average += tmpImage.GetRed(i - 1, j - 1);
+            average += tmpImage.GetRed(i - 1, j);
+            average += tmpImage.GetRed(i - 1, j + 1);
+            average += tmpImage.GetRed(i, j - 1);
+            average += tmpImage.GetRed(i, j);
+            average += tmpImage.GetRed(i, j + 1);
+            average += tmpImage.GetRed(i + 1, j - 1);
+            average += tmpImage.GetRed(i + 1, j);
+            average += tmpImage.GetRed(i + 1, j + 1);
+            float red = average / sum;
+
+            average = 0;
+
+            average += tmpImage.GetGreen(i - 1, j - 1);
+            average += tmpImage.GetGreen(i - 1, j);
+            average += tmpImage.GetGreen(i - 1, j + 1);
+            average += tmpImage.GetGreen(i, j - 1);
+            average += tmpImage.GetGreen(i, j);
+            average += tmpImage.GetGreen(i, j + 1);
+            average += tmpImage.GetGreen(i + 1, j - 1);
+            average += tmpImage.GetGreen(i + 1, j);
+            average += tmpImage.GetGreen(i + 1, j + 1);
+            float green = average / sum;
+
+            average = 0;
+
+            average += tmpImage.GetBlue(i - 1, j - 1);
+            average += tmpImage.GetBlue(i - 1, j);
+            average += tmpImage.GetBlue(i - 1, j + 1);
+            average += tmpImage.GetBlue(i, j - 1);
+            average += tmpImage.GetBlue(i, j);
+            average += tmpImage.GetBlue(i, j + 1);
+            average += tmpImage.GetBlue(i + 1, j - 1);
+            average += tmpImage.GetBlue(i + 1, j);
+            average += tmpImage.GetBlue(i + 1, j + 1);
+            float blue = average / sum;
+
+            loadedImage.SetRGB(i, j, red,
+                green,
+                blue);
+        }
+    }
+
+    tmpImage.Destroy();
+    printf(" Finished Weighted Average Filter.\n");
+    Refresh();
+}
+
+void MyFrame::On4NeighbourFilter(wxCommandEvent& WXUNUSED(event))
+{
     printf("Starting on 4 neighbour filter...\n");
 
     wxImage tmpImage = loadedImage.Copy();
 
-    float mask[3][3] ={
-                       {0,-1.0,0},
-                       {-1.0,4,-1.0},
-                       {0,-1.0,0},
-                     };
+    float mask[3][3] = {
+        { 0, -1.0, 0 },
+        { -1.0, 4, -1.0 },
+        { 0, -1.0, 0 },
+    };
 
+    for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
 
+            float sumR = 0;
 
-    for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-        for(int j=1; j < loadedImage.GetHeight()-1; j++) {
+            sumR += (float)tmpImage.GetRed(i - 1, j - 1) * mask[0][0];
+            sumR += (float)tmpImage.GetRed(i - 1, j) * mask[0][1];
+            sumR += (float)tmpImage.GetRed(i - 1, j + 1) * mask[0][2];
+            sumR += (float)tmpImage.GetRed(i, j - 1) * mask[1][0];
+            sumR += (float)tmpImage.GetRed(i, j) * mask[1][1];
+            sumR += (float)tmpImage.GetRed(i, j + 1) * mask[1][2];
+            sumR += (float)tmpImage.GetRed(i + 1, j - 1) * mask[2][0];
+            sumR += (float)tmpImage.GetRed(i + 1, j) * mask[2][1];
+            sumR += (float)tmpImage.GetRed(i + 1, j + 1) * mask[2][2];
+            sumR = (sumR < 0) ? 0 : sumR;
+            sumR = (sumR > 255) ? 255 : sumR;
 
+            float sumG = 0;
 
-          float sum = 0;
+            sumG += (float)tmpImage.GetGreen(i - 1, j - 1) * mask[0][0];
+            sumG += (float)tmpImage.GetGreen(i - 1, j) * mask[0][1];
+            sumG += (float)tmpImage.GetGreen(i - 1, j + 1) * mask[0][2];
+            sumG += (float)tmpImage.GetGreen(i, j - 1) * mask[1][0];
+            sumG += (float)tmpImage.GetGreen(i, j) * mask[1][1];
+            sumG += (float)tmpImage.GetGreen(i, j + 1) * mask[1][2];
+            sumG += (float)tmpImage.GetGreen(i + 1, j - 1) * mask[2][0];
+            sumG += (float)tmpImage.GetGreen(i + 1, j) * mask[2][1];
+            sumG += (float)tmpImage.GetGreen(i + 1, j + 1) * mask[2][2];
+            sumG = (sumG < 0) ? 0 : sumG;
+            sumG = (sumG > 255) ? 255 : sumG;
 
-          sum += (float)tmpImage.GetRed(i-1,j-1) * mask[0][0];
-          sum += (float)tmpImage.GetRed(i-1,j) * mask[0][1];
-          sum += (float)tmpImage.GetRed(i-1,j+1) * mask[0][2];
-          sum += (float)tmpImage.GetRed(i,j-1) * mask[1][0];
-          sum += (float)tmpImage.GetRed(i,j) * mask[1][1];
-          sum += (float)tmpImage.GetRed(i,j+1) * mask[1][2];
-          sum += (float)tmpImage.GetRed(i+1,j-1) * mask[2][0];
-          sum += (float)tmpImage.GetRed(i+1,j) * mask[2][1];
-          sum += (float)tmpImage.GetRed(i+1,j+1) * mask[2][2];
-          if(sum < 0) {
-            sum = 0;
-          }
-          if(sum > 255) {
-            sum = 255;
-          }
-            loadedImage.SetRGB(i, j, sum,
-                               sum,
-                               sum);
+            float sumB = 0;
 
-       }
+            sumB += (float)tmpImage.GetBlue(i - 1, j - 1) * mask[0][0];
+            sumB += (float)tmpImage.GetBlue(i - 1, j) * mask[0][1];
+            sumB += (float)tmpImage.GetBlue(i - 1, j + 1) * mask[0][2];
+            sumB += (float)tmpImage.GetBlue(i, j - 1) * mask[1][0];
+            sumB += (float)tmpImage.GetBlue(i, j) * mask[1][1];
+            sumB += (float)tmpImage.GetBlue(i, j + 1) * mask[1][2];
+            sumB += (float)tmpImage.GetBlue(i + 1, j - 1) * mask[2][0];
+            sumB += (float)tmpImage.GetBlue(i + 1, j) * mask[2][1];
+            sumB += (float)tmpImage.GetBlue(i + 1, j + 1) * mask[2][2];
+            sumB = (sumB < 0) ? 0 : sumB;
+            sumB = (sumB > 255) ? 255 : sumB;
+
+            loadedImage.SetRGB(i, j, sumR,
+                sumG,
+                sumB);
+        }
     }
 
     tmpImage.Destroy();
@@ -621,376 +704,540 @@ void MyFrame::On4NeighbourFilter(wxCommandEvent & WXUNUSED(event)) {
     Refresh();
 }
 
-void MyFrame::On8NeighbourFilter(wxCommandEvent & WXUNUSED(event)) {
-  printf("Starting on 8 neighbour filter...\n");
-  wxImage tmpImage = loadedImage.Copy();
+void MyFrame::On8NeighbourFilter(wxCommandEvent& WXUNUSED(event))
+{
+    printf("Starting on 8 neighbour filter...\n");
+    wxImage tmpImage = loadedImage.Copy();
 
-  float mask[3][3] ={
-                     {-1.0,-1.0,-1.0},
-                     {-1.0,8.0,-1.0},
-                     {-1.0,-1.0,-1.0},
-                   };
+    float mask[3][3] = {
+        { -1.0, -1.0, -1.0 },
+        { -1.0, 8.0, -1.0 },
+        { -1.0, -1.0, -1.0 },
+    };
 
+    for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
 
+            float sumR = 0;
 
-  for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-      for(int j=1; j < loadedImage.GetHeight()-1; j++) {
+            sumR += (float)tmpImage.GetRed(i - 1, j - 1) * mask[0][0];
+            sumR += (float)tmpImage.GetRed(i - 1, j) * mask[0][1];
+            sumR += (float)tmpImage.GetRed(i - 1, j + 1) * mask[0][2];
+            sumR += (float)tmpImage.GetRed(i, j - 1) * mask[1][0];
+            sumR += (float)tmpImage.GetRed(i, j) * mask[1][1];
+            sumR += (float)tmpImage.GetRed(i, j + 1) * mask[1][2];
+            sumR += (float)tmpImage.GetRed(i + 1, j - 1) * mask[2][0];
+            sumR += (float)tmpImage.GetRed(i + 1, j) * mask[2][1];
+            sumR += (float)tmpImage.GetRed(i + 1, j + 1) * mask[2][2];
+            sumR = (sumR < 0) ? 0 : sumR;
+            sumR = (sumR > 255) ? 255 : sumR;
 
+            float sumG = 0;
 
-        float sum = 0;
+            sumG += (float)tmpImage.GetGreen(i - 1, j - 1) * mask[0][0];
+            sumG += (float)tmpImage.GetGreen(i - 1, j) * mask[0][1];
+            sumG += (float)tmpImage.GetGreen(i - 1, j + 1) * mask[0][2];
+            sumG += (float)tmpImage.GetGreen(i, j - 1) * mask[1][0];
+            sumG += (float)tmpImage.GetGreen(i, j) * mask[1][1];
+            sumG += (float)tmpImage.GetGreen(i, j + 1) * mask[1][2];
+            sumG += (float)tmpImage.GetGreen(i + 1, j - 1) * mask[2][0];
+            sumG += (float)tmpImage.GetGreen(i + 1, j) * mask[2][1];
+            sumG += (float)tmpImage.GetGreen(i + 1, j + 1) * mask[2][2];
+            sumG = (sumG < 0) ? 0 : sumG;
+            sumG = (sumG > 255) ? 255 : sumG;
 
-        sum += (float)tmpImage.GetRed(i-1,j-1) * mask[0][0];
-        sum += (float)tmpImage.GetRed(i-1,j) * mask[0][1];
-        sum += (float)tmpImage.GetRed(i-1,j+1) * mask[0][2];
-        sum += (float)tmpImage.GetRed(i,j-1) * mask[1][0];
-        sum += (float)tmpImage.GetRed(i,j) * mask[1][1];
-        sum += (float)tmpImage.GetRed(i,j+1) * mask[1][2];
-        sum += (float)tmpImage.GetRed(i+1,j-1) * mask[2][0];
-        sum += (float)tmpImage.GetRed(i+1,j) * mask[2][1];
-        sum += (float)tmpImage.GetRed(i+1,j+1) * mask[2][2];
-        if(sum < 0) {
-          sum = 0;
+            float sumB = 0;
+
+            sumB += (float)tmpImage.GetBlue(i - 1, j - 1) * mask[0][0];
+            sumB += (float)tmpImage.GetBlue(i - 1, j) * mask[0][1];
+            sumB += (float)tmpImage.GetBlue(i - 1, j + 1) * mask[0][2];
+            sumB += (float)tmpImage.GetBlue(i, j - 1) * mask[1][0];
+            sumB += (float)tmpImage.GetBlue(i, j) * mask[1][1];
+            sumB += (float)tmpImage.GetBlue(i, j + 1) * mask[1][2];
+            sumB += (float)tmpImage.GetBlue(i + 1, j - 1) * mask[2][0];
+            sumB += (float)tmpImage.GetBlue(i + 1, j) * mask[2][1];
+            sumB += (float)tmpImage.GetBlue(i + 1, j + 1) * mask[2][2];
+            sumB = (sumB < 0) ? 0 : sumB;
+            sumB = (sumB > 255) ? 255 : sumB;
+
+            loadedImage.SetRGB(i, j, sumR,
+                sumG,
+                sumB);
         }
-        if(sum > 255) {
-          sum = 255;
-        }
-          loadedImage.SetRGB(i, j, sum,
-                             sum,
-                             sum);
+    }
 
-     }
-  }
-
-  tmpImage.Destroy();
-  printf("Finished 8 neighbour filter.\n");
-  Refresh();
+    tmpImage.Destroy();
+    printf("Finished 8 neighbour filter.\n");
+    Refresh();
 }
 
-void MyFrame::On4NeighbourLaplacianEnhancementFilter(wxCommandEvent & WXUNUSED(event)) {
-  printf("Starting on 4 neighbour laplacian filter...\n");
-  wxImage tmpImage = loadedImage.Copy();
+void MyFrame::On4NeighbourLaplacianEnhancementFilter(wxCommandEvent& WXUNUSED(event))
+{
+    printf("Starting on 4 neighbour laplacian filter...\n");
+    wxImage tmpImage = loadedImage.Copy();
 
-  float mask[3][3] ={
-                     {0,-1.0,0},
-                     {-1.0,5.0,-1.0},
-                     {0,-1.0,0},
-                   };
+    float mask[3][3] = {
+        { 0, -1.0, 0 },
+        { -1.0, 5.0, -1.0 },
+        { 0, -1.0, 0 },
+    };
 
+    for (int i = mouseDownX; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY; j < mouseUpY - 1; j++) {
 
+            float sumR = 0;
 
-  for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-      for(int j=1; j < loadedImage.GetHeight()-1; j++) {
+            sumR += (float)tmpImage.GetRed(i - 1, j - 1) * mask[0][0];
+            sumR += (float)tmpImage.GetRed(i - 1, j) * mask[0][1];
+            sumR += (float)tmpImage.GetRed(i - 1, j + 1) * mask[0][2];
+            sumR += (float)tmpImage.GetRed(i, j - 1) * mask[1][0];
+            sumR += (float)tmpImage.GetRed(i, j) * mask[1][1];
+            sumR += (float)tmpImage.GetRed(i, j + 1) * mask[1][2];
+            sumR += (float)tmpImage.GetRed(i + 1, j - 1) * mask[2][0];
+            sumR += (float)tmpImage.GetRed(i + 1, j) * mask[2][1];
+            sumR += (float)tmpImage.GetRed(i + 1, j + 1) * mask[2][2];
+            sumR = (sumR < 0) ? 0 : sumR;
+            sumR = (sumR > 255) ? 255 : sumR;
 
+            float sumG = 0;
 
-        float sum = 0;
+            sumG += (float)tmpImage.GetGreen(i - 1, j - 1) * mask[0][0];
+            sumG += (float)tmpImage.GetGreen(i - 1, j) * mask[0][1];
+            sumG += (float)tmpImage.GetGreen(i - 1, j + 1) * mask[0][2];
+            sumG += (float)tmpImage.GetGreen(i, j - 1) * mask[1][0];
+            sumG += (float)tmpImage.GetGreen(i, j) * mask[1][1];
+            sumG += (float)tmpImage.GetGreen(i, j + 1) * mask[1][2];
+            sumG += (float)tmpImage.GetGreen(i + 1, j - 1) * mask[2][0];
+            sumG += (float)tmpImage.GetGreen(i + 1, j) * mask[2][1];
+            sumG += (float)tmpImage.GetGreen(i + 1, j + 1) * mask[2][2];
+            sumG = (sumG < 0) ? 0 : sumG;
+            sumG = (sumG > 255) ? 255 : sumG;
 
-        sum += (float)tmpImage.GetRed(i-1,j-1) * mask[0][0];
-        sum += (float)tmpImage.GetRed(i-1,j) * mask[0][1];
-        sum += (float)tmpImage.GetRed(i-1,j+1) * mask[0][2];
-        sum += (float)tmpImage.GetRed(i,j-1) * mask[1][0];
-        sum += (float)tmpImage.GetRed(i,j) * mask[1][1];
-        sum += (float)tmpImage.GetRed(i,j+1) * mask[1][2];
-        sum += (float)tmpImage.GetRed(i+1,j-1) * mask[2][0];
-        sum += (float)tmpImage.GetRed(i+1,j) * mask[2][1];
-        sum += (float)tmpImage.GetRed(i+1,j+1) * mask[2][2];
-        if(sum < 0) {
-          sum = 0;
+            float sumB = 0;
+
+            sumB += (float)tmpImage.GetBlue(i - 1, j - 1) * mask[0][0];
+            sumB += (float)tmpImage.GetBlue(i - 1, j) * mask[0][1];
+            sumB += (float)tmpImage.GetBlue(i - 1, j + 1) * mask[0][2];
+            sumB += (float)tmpImage.GetBlue(i, j - 1) * mask[1][0];
+            sumB += (float)tmpImage.GetBlue(i, j) * mask[1][1];
+            sumB += (float)tmpImage.GetBlue(i, j + 1) * mask[1][2];
+            sumB += (float)tmpImage.GetBlue(i + 1, j - 1) * mask[2][0];
+            sumB += (float)tmpImage.GetBlue(i + 1, j) * mask[2][1];
+            sumB += (float)tmpImage.GetBlue(i + 1, j + 1) * mask[2][2];
+            sumB = (sumB < 0) ? 0 : sumB;
+            sumB = (sumB > 255) ? 255 : sumB;
+
+            loadedImage.SetRGB(i, j, sumR,
+                sumG,
+                sumB);
         }
-        if(sum > 255) {
-          sum = 255;
-        }
-          loadedImage.SetRGB(i, j, sum,
-                             sum,
-                             sum);
+    }
 
-     }
-  }
-
-  tmpImage.Destroy();
-  printf("Finished 4 neighbour laplacian filter.\n");
-  Refresh();
+    tmpImage.Destroy();
+    printf("Finished 4 neighbour laplacian filter.\n");
+    Refresh();
 }
 
-void MyFrame::On8NeighbourLaplacianEnhancementFilter(wxCommandEvent & WXUNUSED(event)) {
-  printf("Starting on 8 neighbour laplacian filter...\n");
-  wxImage tmpImage = loadedImage.Copy();
+void MyFrame::On8NeighbourLaplacianEnhancementFilter(wxCommandEvent& WXUNUSED(event))
+{
+    printf("Starting on 8 neighbour laplacian filter...\n");
+    wxImage tmpImage = loadedImage.Copy();
 
-  float mask[3][3] ={
-                     {-1.0,-1.0,-1.0},
-                     {-1.0,9.0,-1.0},
-                     {-1.0,-1.0,-1.0},
-                   };
+    float mask[3][3] = {
+        { -1.0, -1.0, -1.0 },
+        { -1.0, 9.0, -1.0 },
+        { -1.0, -1.0, -1.0 },
+    };
 
-   for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-       for(int j=1; j < loadedImage.GetHeight()-1; j++) {
+    for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
 
-        float sum = 0;
+            float sumR = 0;
 
-        sum += (float)tmpImage.GetRed(i-1,j-1) * mask[0][0];
-        sum += (float)tmpImage.GetRed(i-1,j) * mask[0][1];
-        sum += (float)tmpImage.GetRed(i-1,j+1) * mask[0][2];
-        sum += (float)tmpImage.GetRed(i,j-1) * mask[1][0];
-        sum += (float)tmpImage.GetRed(i,j) * mask[1][1];
-        sum += (float)tmpImage.GetRed(i,j+1) * mask[1][2];
-        sum += (float)tmpImage.GetRed(i+1,j-1) * mask[2][0];
-        sum += (float)tmpImage.GetRed(i+1,j) * mask[2][1];
-        sum += (float)tmpImage.GetRed(i+1,j+1) * mask[2][2];
-        if(sum < 0) {
-          sum = 0;
+            sumR += (float)tmpImage.GetRed(i - 1, j - 1) * mask[0][0];
+            sumR += (float)tmpImage.GetRed(i - 1, j) * mask[0][1];
+            sumR += (float)tmpImage.GetRed(i - 1, j + 1) * mask[0][2];
+            sumR += (float)tmpImage.GetRed(i, j - 1) * mask[1][0];
+            sumR += (float)tmpImage.GetRed(i, j) * mask[1][1];
+            sumR += (float)tmpImage.GetRed(i, j + 1) * mask[1][2];
+            sumR += (float)tmpImage.GetRed(i + 1, j - 1) * mask[2][0];
+            sumR += (float)tmpImage.GetRed(i + 1, j) * mask[2][1];
+            sumR += (float)tmpImage.GetRed(i + 1, j + 1) * mask[2][2];
+            sumR = (sumR < 0) ? 0 : sumR;
+            sumR = (sumR > 255) ? 255 : sumR;
+
+            float sumG = 0;
+
+            sumG += (float)tmpImage.GetGreen(i - 1, j - 1) * mask[0][0];
+            sumG += (float)tmpImage.GetGreen(i - 1, j) * mask[0][1];
+            sumG += (float)tmpImage.GetGreen(i - 1, j + 1) * mask[0][2];
+            sumG += (float)tmpImage.GetGreen(i, j - 1) * mask[1][0];
+            sumG += (float)tmpImage.GetGreen(i, j) * mask[1][1];
+            sumG += (float)tmpImage.GetGreen(i, j + 1) * mask[1][2];
+            sumG += (float)tmpImage.GetGreen(i + 1, j - 1) * mask[2][0];
+            sumG += (float)tmpImage.GetGreen(i + 1, j) * mask[2][1];
+            sumG += (float)tmpImage.GetGreen(i + 1, j + 1) * mask[2][2];
+            sumG = (sumG < 0) ? 0 : sumG;
+            sumG = (sumG > 255) ? 255 : sumG;
+
+            float sumB = 0;
+
+            sumB += (float)tmpImage.GetBlue(i - 1, j - 1) * mask[0][0];
+            sumB += (float)tmpImage.GetBlue(i - 1, j) * mask[0][1];
+            sumB += (float)tmpImage.GetBlue(i - 1, j + 1) * mask[0][2];
+            sumB += (float)tmpImage.GetBlue(i, j - 1) * mask[1][0];
+            sumB += (float)tmpImage.GetBlue(i, j) * mask[1][1];
+            sumB += (float)tmpImage.GetBlue(i, j + 1) * mask[1][2];
+            sumB += (float)tmpImage.GetBlue(i + 1, j - 1) * mask[2][0];
+            sumB += (float)tmpImage.GetBlue(i + 1, j) * mask[2][1];
+            sumB += (float)tmpImage.GetBlue(i + 1, j + 1) * mask[2][2];
+            sumB = (sumB < 0) ? 0 : sumB;
+            sumB = (sumB > 255) ? 255 : sumB;
+
+            loadedImage.SetRGB(i, j, sumR,
+                sumG,
+                sumB);
         }
-        if(sum > 255) {
-          sum = 255;
-        }
-          loadedImage.SetRGB(i, j, sum,
-                             sum,
-                             sum);
+    }
 
-     }
-  }
-
-  tmpImage.Destroy();
-  printf("Finished 8 neighbour laplacian filter.\n");
-  Refresh();
+    tmpImage.Destroy();
+    printf("Finished 8 neighbour laplacian filter.\n");
+    Refresh();
 }
 
-void MyFrame::OnRobertsFilter(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnRobertsFilter(wxCommandEvent& WXUNUSED(event))
+{
 
-  printf("Applying Roberts Filter...\n");
-  wxImage tmpImage = loadedImage.Copy();
+    printf("Applying Roberts Filter...\n");
+    wxImage tmpImage = loadedImage.Copy();
 
-  float mask1[3][3] = {
-                       {0,0,0},
-                       {0,0,-1.0},
-                       {0,1.0,0},
-                     };
+    float mask1[3][3] = {
+        { 0, 0, 0 },
+        { 0, 0, -1.0 },
+        { 0, 1.0, 0 },
+    };
 
+    for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
 
+            float sumR = 0;
 
-  for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-      for(int j=1; j < loadedImage.GetHeight()-1; j++) {
+            sumR += (float)tmpImage.GetRed(i - 1, j - 1) * mask1[0][0];
+            sumR += (float)tmpImage.GetRed(i - 1, j) * mask1[0][1];
+            sumR += (float)tmpImage.GetRed(i - 1, j + 1) * mask1[0][2];
+            sumR += (float)tmpImage.GetRed(i, j - 1) * mask1[1][0];
+            sumR += (float)tmpImage.GetRed(i, j) * mask1[1][1];
+            sumR += (float)tmpImage.GetRed(i, j + 1) * mask1[1][2];
+            sumR += (float)tmpImage.GetRed(i + 1, j - 1) * mask1[2][0];
+            sumR += (float)tmpImage.GetRed(i + 1, j) * mask1[2][1];
+            sumR += (float)tmpImage.GetRed(i + 1, j + 1) * mask1[2][2];
+            sumR = (sumR < 0) ? 0 : sumR;
+            sumR = (sumR > 255) ? 255 : sumR;
 
-        float sum = 0;
+            float sumG = 0;
 
-        sum += (float)tmpImage.GetRed(i-1,j-1) * mask1[0][0];
-        sum += (float)tmpImage.GetRed(i-1,j) * mask1[0][1];
-        sum += (float)tmpImage.GetRed(i-1,j+1) * mask1[0][2];
-        sum += (float)tmpImage.GetRed(i,j-1) * mask1[1][0];
-        sum += (float)tmpImage.GetRed(i,j) * mask1[1][1];
-        sum += (float)tmpImage.GetRed(i,j+1) * mask1[1][2];
-        sum += (float)tmpImage.GetRed(i+1,j-1) * mask1[2][0];
-        sum += (float)tmpImage.GetRed(i+1,j) * mask1[2][1];
-        sum += (float)tmpImage.GetRed(i+1,j+1) * mask1[2][2];
-        if(sum < 0) {
-          sum = 0;
+            sumG += (float)tmpImage.GetGreen(i - 1, j - 1) * mask1[0][0];
+            sumG += (float)tmpImage.GetGreen(i - 1, j) * mask1[0][1];
+            sumG += (float)tmpImage.GetGreen(i - 1, j + 1) * mask1[0][2];
+            sumG += (float)tmpImage.GetGreen(i, j - 1) * mask1[1][0];
+            sumG += (float)tmpImage.GetGreen(i, j) * mask1[1][1];
+            sumG += (float)tmpImage.GetGreen(i, j + 1) * mask1[1][2];
+            sumG += (float)tmpImage.GetGreen(i + 1, j - 1) * mask1[2][0];
+            sumG += (float)tmpImage.GetGreen(i + 1, j) * mask1[2][1];
+            sumG += (float)tmpImage.GetGreen(i + 1, j + 1) * mask1[2][2];
+            sumG = (sumG < 0) ? 0 : sumG;
+            sumG = (sumG > 255) ? 255 : sumG;
+
+            float sumB = 0;
+
+            sumB += (float)tmpImage.GetBlue(i - 1, j - 1) * mask1[0][0];
+            sumB += (float)tmpImage.GetBlue(i - 1, j) * mask1[0][1];
+            sumB += (float)tmpImage.GetBlue(i - 1, j + 1) * mask1[0][2];
+            sumB += (float)tmpImage.GetBlue(i, j - 1) * mask1[1][0];
+            sumB += (float)tmpImage.GetBlue(i, j) * mask1[1][1];
+            sumB += (float)tmpImage.GetBlue(i, j + 1) * mask1[1][2];
+            sumB += (float)tmpImage.GetBlue(i + 1, j - 1) * mask1[2][0];
+            sumB += (float)tmpImage.GetBlue(i + 1, j) * mask1[2][1];
+            sumB += (float)tmpImage.GetBlue(i + 1, j + 1) * mask1[2][2];
+            sumB = (sumB < 0) ? 0 : sumB;
+            sumB = (sumB > 255) ? 255 : sumB;
+
+            loadedImage.SetRGB(i, j, sumR,
+                sumG,
+                sumB);
         }
-        if(sum > 255) {
-          sum = 255;
+    }
+
+    float mask2[3][3] = {
+        { 0, 0, 0 },
+        { 0, -1.0, 0 },
+        { 0, 0, 1.0 },
+    };
+
+    tmpImage = loadedImage.Copy();
+
+    for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
+
+            float sumR = 0;
+
+            sumR += (float)tmpImage.GetRed(i - 1, j - 1) * mask2[0][0];
+            sumR += (float)tmpImage.GetRed(i - 1, j) * mask2[0][1];
+            sumR += (float)tmpImage.GetRed(i - 1, j + 1) * mask2[0][2];
+            sumR += (float)tmpImage.GetRed(i, j - 1) * mask2[1][0];
+            sumR += (float)tmpImage.GetRed(i, j) * mask2[1][1];
+            sumR += (float)tmpImage.GetRed(i, j + 1) * mask2[1][2];
+            sumR += (float)tmpImage.GetRed(i + 1, j - 1) * mask2[2][0];
+            sumR += (float)tmpImage.GetRed(i + 1, j) * mask2[2][1];
+            sumR += (float)tmpImage.GetRed(i + 1, j + 1) * mask2[2][2];
+            sumR = (sumR < 0) ? 0 : sumR;
+            sumR = (sumR > 255) ? 255 : sumR;
+
+            float sumG = 0;
+
+            sumG += (float)tmpImage.GetGreen(i - 1, j - 1) * mask2[0][0];
+            sumG += (float)tmpImage.GetGreen(i - 1, j) * mask2[0][1];
+            sumG += (float)tmpImage.GetGreen(i - 1, j + 1) * mask2[0][2];
+            sumG += (float)tmpImage.GetGreen(i, j - 1) * mask2[1][0];
+            sumG += (float)tmpImage.GetGreen(i, j) * mask2[1][1];
+            sumG += (float)tmpImage.GetGreen(i, j + 1) * mask2[1][2];
+            sumG += (float)tmpImage.GetGreen(i + 1, j - 1) * mask2[2][0];
+            sumG += (float)tmpImage.GetGreen(i + 1, j) * mask2[2][1];
+            sumG += (float)tmpImage.GetGreen(i + 1, j + 1) * mask2[2][2];
+            sumG = (sumG < 0) ? 0 : sumG;
+            sumG = (sumG > 255) ? 255 : sumG;
+
+            float sumB = 0;
+
+            sumB += (float)tmpImage.GetBlue(i - 1, j - 1) * mask2[0][0];
+            sumB += (float)tmpImage.GetBlue(i - 1, j) * mask2[0][1];
+            sumB += (float)tmpImage.GetBlue(i - 1, j + 1) * mask2[0][2];
+            sumB += (float)tmpImage.GetBlue(i, j - 1) * mask2[1][0];
+            sumB += (float)tmpImage.GetBlue(i, j) * mask2[1][1];
+            sumB += (float)tmpImage.GetBlue(i, j + 1) * mask2[1][2];
+            sumB += (float)tmpImage.GetBlue(i + 1, j - 1) * mask2[2][0];
+            sumB += (float)tmpImage.GetBlue(i + 1, j) * mask2[2][1];
+            sumB += (float)tmpImage.GetBlue(i + 1, j + 1) * mask2[2][2];
+            sumB = (sumB < 0) ? 0 : sumB;
+            sumB = (sumB > 255) ? 255 : sumB;
+
+            loadedImage.SetRGB(i, j, sumR,
+                sumG,
+                sumB);
         }
-          loadedImage.SetRGB(i, j, sum,
-                             sum,
-                             sum);
+    }
 
-     }
-  }
-
-
-   float mask2[3][3] = {
-                       {0,0,0},
-                       {0,-1.0,0},
-                       {0,0,1.0},
-                     };
-
-  tmpImage = loadedImage.Copy();
-
-  for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-      for(int j=1; j < loadedImage.GetHeight()-1; j++) {
-
-        float sum = 0;
-
-        sum += (float)tmpImage.GetRed(i-1,j-1) * mask2[0][0];
-        sum += (float)tmpImage.GetRed(i-1,j) * mask2[0][1];
-        sum += (float)tmpImage.GetRed(i-1,j+1) * mask2[0][2];
-        sum += (float)tmpImage.GetRed(i,j-1) * mask2[1][0];
-        sum += (float)tmpImage.GetRed(i,j) * mask2[1][1];
-        sum += (float)tmpImage.GetRed(i-1,j) * mask1[0][1];
-        sum += (float)tmpImage.GetRed(i-1,j+1) * mask1[0][2];
-        sum += (float)tmpImage.GetRed(i,j-1) * mask1[1][0];
-        sum += (float)tmpImage.GetRed(i,j+1) * mask2[1][2];
-        sum += (float)tmpImage.GetRed(i+1,j-1) * mask2[2][0];
-        sum += (float)tmpImage.GetRed(i+1,j) * mask2[2][1];
-        sum += (float)tmpImage.GetRed(i+1,j+1) * mask2[2][2];
-        if(sum < 0) {
-          sum = 0;
-        }
-        if(sum > 255) {
-          sum = 255;
-        }
-          loadedImage.SetRGB(i, j, sum,
-                             sum,
-                             sum);
-
-     }
-  }
-
-  tmpImage.Destroy();
-  printf("Finished Applying Roberts Filter.\n");
-  Refresh();
+    tmpImage.Destroy();
+    printf("Finished Applying Roberts Filter.\n");
+    Refresh();
 }
 
-void MyFrame::OnSobelXFilter(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnSobelXFilter(wxCommandEvent& WXUNUSED(event))
+{
 
-  printf("Applying Sobel X Filter...\n");
-  wxImage tmpImage = loadedImage.Copy();
+    printf("Applying Sobel X Filter...\n");
+    wxImage tmpImage = loadedImage.Copy();
 
-  float mask[3][3] = {
-                       {-1.0,0,1},
-                       {-2.0,0,2.0},
-                       {-1.0,0,1.0},
-                     };
+    float mask[3][3] = {
+        { -1.0, 0, 1 },
+        { -2.0, 0, 2.0 },
+        { -1.0, 0, 1.0 },
+    };
 
+    for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
 
+            float sumR = 0;
 
-  for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-      for(int j=1; j < loadedImage.GetHeight()-1; j++) {
+            sumR += (float)tmpImage.GetRed(i - 1, j - 1) * mask[0][0];
+            sumR += (float)tmpImage.GetRed(i - 1, j) * mask[0][1];
+            sumR += (float)tmpImage.GetRed(i - 1, j + 1) * mask[0][2];
+            sumR += (float)tmpImage.GetRed(i, j - 1) * mask[1][0];
+            sumR += (float)tmpImage.GetRed(i, j) * mask[1][1];
+            sumR += (float)tmpImage.GetRed(i, j + 1) * mask[1][2];
+            sumR += (float)tmpImage.GetRed(i + 1, j - 1) * mask[2][0];
+            sumR += (float)tmpImage.GetRed(i + 1, j) * mask[2][1];
+            sumR += (float)tmpImage.GetRed(i + 1, j + 1) * mask[2][2];
+            sumR = (sumR < 0) ? 0 : sumR;
+            sumR = (sumR > 255) ? 255 : sumR;
 
-        float sum = 0;
+            float sumG = 0;
 
-        sum += (float)tmpImage.GetRed(i-1,j-1) * mask[0][0];
-        sum += (float)tmpImage.GetRed(i-1,j) * mask[0][1];
-        sum += (float)tmpImage.GetRed(i-1,j+1) * mask[0][2];
-        sum += (float)tmpImage.GetRed(i,j-1) * mask[1][0];
-        sum += (float)tmpImage.GetRed(i,j) * mask[1][1];
-        sum += (float)tmpImage.GetRed(i,j+1) * mask[1][2];
-        sum += (float)tmpImage.GetRed(i+1,j-1) * mask[2][0];
-        sum += (float)tmpImage.GetRed(i+1,j) * mask[2][1];
-        sum += (float)tmpImage.GetRed(i+1,j+1) * mask[2][2];
-        if(sum < 0) {
-          sum = 0;
+            sumG += (float)tmpImage.GetGreen(i - 1, j - 1) * mask[0][0];
+            sumG += (float)tmpImage.GetGreen(i - 1, j) * mask[0][1];
+            sumG += (float)tmpImage.GetGreen(i - 1, j + 1) * mask[0][2];
+            sumG += (float)tmpImage.GetGreen(i, j - 1) * mask[1][0];
+            sumG += (float)tmpImage.GetGreen(i, j) * mask[1][1];
+            sumG += (float)tmpImage.GetGreen(i, j + 1) * mask[1][2];
+            sumG += (float)tmpImage.GetGreen(i + 1, j - 1) * mask[2][0];
+            sumG += (float)tmpImage.GetGreen(i + 1, j) * mask[2][1];
+            sumG += (float)tmpImage.GetGreen(i + 1, j + 1) * mask[2][2];
+            sumG = (sumG < 0) ? 0 : sumG;
+            sumG = (sumG > 255) ? 255 : sumG;
+
+            float sumB = 0;
+
+            sumB += (float)tmpImage.GetBlue(i - 1, j - 1) * mask[0][0];
+            sumB += (float)tmpImage.GetBlue(i - 1, j) * mask[0][1];
+            sumB += (float)tmpImage.GetBlue(i - 1, j + 1) * mask[0][2];
+            sumB += (float)tmpImage.GetBlue(i, j - 1) * mask[1][0];
+            sumB += (float)tmpImage.GetBlue(i, j) * mask[1][1];
+            sumB += (float)tmpImage.GetBlue(i, j + 1) * mask[1][2];
+            sumB += (float)tmpImage.GetBlue(i + 1, j - 1) * mask[2][0];
+            sumB += (float)tmpImage.GetBlue(i + 1, j) * mask[2][1];
+            sumB += (float)tmpImage.GetBlue(i + 1, j + 1) * mask[2][2];
+            sumB = (sumB < 0) ? 0 : sumB;
+            sumB = (sumB > 255) ? 255 : sumB;
+
+            loadedImage.SetRGB(i, j, sumR,
+                sumG,
+                sumB);
         }
-        if(sum > 255) {
-          sum = 255;
-        }
-          loadedImage.SetRGB(i, j, sum,
-                             sum,
-                             sum);
+    }
 
-     }
-  }
-
-  tmpImage.Destroy();
-  printf("Finished Applying Sobel X Filter.\n");
-  Refresh();
+    tmpImage.Destroy();
+    printf("Finished Applying Sobel X Filter.\n");
+    Refresh();
 }
 
-void MyFrame::OnSobelYFilter(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnSobelYFilter(wxCommandEvent& WXUNUSED(event))
+{
 
-  printf("Applying Sobel Y Filter...\n");
-  wxImage tmpImage = loadedImage.Copy();
+    printf("Applying Sobel Y Filter...\n");
+    wxImage tmpImage = loadedImage.Copy();
 
-  float mask[3][3] = {
-                       {-1.0,-2.0,-1.0},
-                       {0,0,0},
-                       {1.0,2.0,1.0},
-                     };
+    float mask[3][3] = {
+        { -1.0, -2.0, -1.0 },
+        { 0, 0, 0 },
+        { 1.0, 2.0, 1.0 },
+    };
 
+    for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
 
+            float sumR = 0;
 
-  for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-      for(int j=1; j < loadedImage.GetHeight()-1; j++) {
+            sumR += (float)tmpImage.GetRed(i - 1, j - 1) * mask[0][0];
+            sumR += (float)tmpImage.GetRed(i - 1, j) * mask[0][1];
+            sumR += (float)tmpImage.GetRed(i - 1, j + 1) * mask[0][2];
+            sumR += (float)tmpImage.GetRed(i, j - 1) * mask[1][0];
+            sumR += (float)tmpImage.GetRed(i, j) * mask[1][1];
+            sumR += (float)tmpImage.GetRed(i, j + 1) * mask[1][2];
+            sumR += (float)tmpImage.GetRed(i + 1, j - 1) * mask[2][0];
+            sumR += (float)tmpImage.GetRed(i + 1, j) * mask[2][1];
+            sumR += (float)tmpImage.GetRed(i + 1, j + 1) * mask[2][2];
+            sumR = (sumR < 0) ? 0 : sumR;
+            sumR = (sumR > 255) ? 255 : sumR;
 
-        float sum = 0;
+            float sumG = 0;
 
-        sum += (float)tmpImage.GetRed(i-1,j-1) * mask[0][0];
-        sum += (float)tmpImage.GetRed(i-1,j) * mask[0][1];
-        sum += (float)tmpImage.GetRed(i-1,j+1) * mask[0][2];
-        sum += (float)tmpImage.GetRed(i,j-1) * mask[1][0];
-        sum += (float)tmpImage.GetRed(i,j) * mask[1][1];
-        sum += (float)tmpImage.GetRed(i,j+1) * mask[1][2];
-        sum += (float)tmpImage.GetRed(i+1,j-1) * mask[2][0];
-        sum += (float)tmpImage.GetRed(i+1,j) * mask[2][1];
-        sum += (float)tmpImage.GetRed(i+1,j+1) * mask[2][2];
-        if(sum < 0) {
-          sum = 0;
+            sumG += (float)tmpImage.GetGreen(i - 1, j - 1) * mask[0][0];
+            sumG += (float)tmpImage.GetGreen(i - 1, j) * mask[0][1];
+            sumG += (float)tmpImage.GetGreen(i - 1, j + 1) * mask[0][2];
+            sumG += (float)tmpImage.GetGreen(i, j - 1) * mask[1][0];
+            sumG += (float)tmpImage.GetGreen(i, j) * mask[1][1];
+            sumG += (float)tmpImage.GetGreen(i, j + 1) * mask[1][2];
+            sumG += (float)tmpImage.GetGreen(i + 1, j - 1) * mask[2][0];
+            sumG += (float)tmpImage.GetGreen(i + 1, j) * mask[2][1];
+            sumG += (float)tmpImage.GetGreen(i + 1, j + 1) * mask[2][2];
+            sumG = (sumG < 0) ? 0 : sumG;
+            sumG = (sumG > 255) ? 255 : sumG;
+
+            float sumB = 0;
+
+            sumB += (float)tmpImage.GetBlue(i - 1, j - 1) * mask[0][0];
+            sumB += (float)tmpImage.GetBlue(i - 1, j) * mask[0][1];
+            sumB += (float)tmpImage.GetBlue(i - 1, j + 1) * mask[0][2];
+            sumB += (float)tmpImage.GetBlue(i, j - 1) * mask[1][0];
+            sumB += (float)tmpImage.GetBlue(i, j) * mask[1][1];
+            sumB += (float)tmpImage.GetBlue(i, j + 1) * mask[1][2];
+            sumB += (float)tmpImage.GetBlue(i + 1, j - 1) * mask[2][0];
+            sumB += (float)tmpImage.GetBlue(i + 1, j) * mask[2][1];
+            sumB += (float)tmpImage.GetBlue(i + 1, j + 1) * mask[2][2];
+            sumB = (sumB < 0) ? 0 : sumB;
+            sumB = (sumB > 255) ? 255 : sumB;
+
+            loadedImage.SetRGB(i, j, sumR,
+                sumG,
+                sumB);
         }
-        if(sum > 255) {
-          sum = 255;
-        }
-          loadedImage.SetRGB(i, j, sum,
-                             sum,
-                             sum);
+    }
 
-     }
-  }
-
-  tmpImage.Destroy();
-  printf("Finished Applying Sobel Y Filter.\n");
-  Refresh();
+    tmpImage.Destroy();
+    printf("Finished Applying Sobel Y Filter.\n");
+    Refresh();
 }
 
-
-//(5,3)#include <cstdlib>
-#include <ctime>
-//(10,4)
-
-
-
-
-void MyFrame::OnSaltAndPepper(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnSaltAndPepper(wxCommandEvent& WXUNUSED(event))
+{
 
     printf("Applying Salt And Pepper...");
 
-
     srand(time(NULL));
 
-    for(int i=0; i < loadedImage.GetWidth(); i++) {
-        for(int j=0; j < loadedImage.GetHeight(); j++) {
-          int random_number = rand() % 50; // rand() return a number between ​0​ and 19
-          cout << random_number << endl;
-          if(random_number == 0) {
-            loadedImage.SetRGB(i, j, 0,
-                               0,
-                               0);
-
-          }
-          if(random_number == 49) {
-            loadedImage.SetRGB(i, j, 255,
-                               255,
-                               255);
-          }
-
-
-
-
-       }
+    for (int i = mouseDownX; i < mouseUpX; i++) {
+        for (int j = mouseDownY; j < mouseUpY; j++) {
+            int random_number = rand() % 50; // rand() return a number between ​0​ and 49
+            if (random_number == 0) {
+                loadedImage.SetRGB(i, j, 0, 0, 0);
+            }
+            if (random_number == 49) {
+                loadedImage.SetRGB(i, j, 255, 255, 255);
+            }
+        }
     }
-
 
     printf("Finished Applying Salt And Pepper.\n");
     Refresh();
 }
 
-void MyFrame::OnMinFilter(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnMinFilter(wxCommandEvent& WXUNUSED(event))
+{
 
     printf("Applying Min Filter...");
     wxImage tmpImage = loadedImage.Copy();
 
-    for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-        for(int j=1; j < loadedImage.GetHeight()-1; j++) {
+    for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
 
-          unsigned char minPixel = 255;
+            unsigned char r = 255;
 
-          minPixel = min(tmpImage.GetRed(i-1,j-1),minPixel);
-          minPixel = min(tmpImage.GetRed(i-1,j),minPixel);
-          minPixel = min(tmpImage.GetRed(i-1,j+1),minPixel);
-          minPixel = min(tmpImage.GetRed(i,j-1),minPixel);
-          minPixel = min(tmpImage.GetRed(i,j),minPixel);
-          minPixel = min(tmpImage.GetRed(i,j+1),minPixel);
-          minPixel = min(tmpImage.GetRed(i+1,j-1),minPixel);
-          minPixel = min(tmpImage.GetRed(i+1,j),minPixel);
-          minPixel = min(tmpImage.GetRed(i+1,j+1),minPixel);
+            r = min(tmpImage.GetRed(i - 1, j - 1), r);
+            r = min(tmpImage.GetRed(i - 1, j), r);
+            r = min(tmpImage.GetRed(i - 1, j + 1), r);
+            r = min(tmpImage.GetRed(i, j - 1), r);
+            r = min(tmpImage.GetRed(i, j), r);
+            r = min(tmpImage.GetRed(i, j + 1), r);
+            r = min(tmpImage.GetRed(i + 1, j - 1), r);
+            r = min(tmpImage.GetRed(i + 1, j), r);
+            r = min(tmpImage.GetRed(i + 1, j + 1), r);
 
-          loadedImage.SetRGB(i, j, minPixel, minPixel, minPixel);
-       }
+            unsigned char g = 255;
+
+            g = min(tmpImage.GetGreen(i - 1, j - 1), g);
+            g = min(tmpImage.GetGreen(i - 1, j), g);
+            g = min(tmpImage.GetGreen(i - 1, j + 1), g);
+            g = min(tmpImage.GetGreen(i, j - 1), g);
+            g = min(tmpImage.GetGreen(i, j), g);
+            g = min(tmpImage.GetGreen(i, j + 1), g);
+            g = min(tmpImage.GetGreen(i + 1, j - 1), g);
+            g = min(tmpImage.GetGreen(i + 1, j), g);
+            g = min(tmpImage.GetGreen(i + 1, j + 1), g);
+
+            unsigned char b = 255;
+
+            b = min(tmpImage.GetBlue(i - 1, j - 1), b);
+            b = min(tmpImage.GetBlue(i - 1, j), b);
+            b = min(tmpImage.GetBlue(i - 1, j + 1), b);
+            b = min(tmpImage.GetBlue(i, j - 1), b);
+            b = min(tmpImage.GetBlue(i, j), b);
+            b = min(tmpImage.GetBlue(i, j + 1), b);
+            b = min(tmpImage.GetBlue(i + 1, j - 1), b);
+            b = min(tmpImage.GetBlue(i + 1, j), b);
+            b = min(tmpImage.GetBlue(i + 1, j + 1), b);
+
+            loadedImage.SetRGB(i, j, r, g, b);
+        }
     }
 
     tmpImage.Destroy();
@@ -999,291 +1246,826 @@ void MyFrame::OnMinFilter(wxCommandEvent & WXUNUSED(event)) {
     Refresh();
 }
 
-void MyFrame::OnMaxFilter(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnMaxFilter(wxCommandEvent& WXUNUSED(event))
+{
 
-  printf("Applying Max Filter...");
-  wxImage tmpImage = loadedImage.Copy();
+    printf("Applying Max Filter...");
+    wxImage tmpImage = loadedImage.Copy();
 
-  for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-      for(int j=1; j < loadedImage.GetHeight()-1; j++) {
+    for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY + 1; j < mouseUpY -1; j++) {
 
-        unsigned char maxPixel = 0;
+            unsigned char r = 0;
 
-        maxPixel = max(tmpImage.GetRed(i-1,j-1),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i-1,j),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i-1,j+1),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i,j-1),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i,j),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i,j+1),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i+1,j-1),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i+1,j),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i+1,j+1),maxPixel);
+            r = max(tmpImage.GetRed(i - 1, j - 1), r);
+            r = max(tmpImage.GetRed(i - 1, j), r);
+            r = max(tmpImage.GetRed(i - 1, j + 1), r);
+            r = max(tmpImage.GetRed(i, j - 1), r);
+            r = max(tmpImage.GetRed(i, j), r);
+            r = max(tmpImage.GetRed(i, j + 1), r);
+            r = max(tmpImage.GetRed(i + 1, j - 1), r);
+            r = max(tmpImage.GetRed(i + 1, j), r);
+            r = max(tmpImage.GetRed(i + 1, j + 1), r);
 
-        loadedImage.SetRGB(i, j, maxPixel, maxPixel, maxPixel);
-     }
-  }
+            unsigned char g = 0;
 
-  tmpImage.Destroy();
+            g = max(tmpImage.GetGreen(i - 1, j - 1), g);
+            g = max(tmpImage.GetGreen(i - 1, j), g);
+            g = max(tmpImage.GetGreen(i - 1, j + 1), g);
+            g = max(tmpImage.GetGreen(i, j - 1), g);
+            g = max(tmpImage.GetGreen(i, j), g);
+            g = max(tmpImage.GetGreen(i, j + 1), g);
+            g = max(tmpImage.GetGreen(i + 1, j - 1), g);
+            g = max(tmpImage.GetGreen(i + 1, j), g);
+            g = max(tmpImage.GetGreen(i + 1, j + 1), g);
 
-  printf("Finished Applying Max Filter.\n");
-  Refresh();
-}
+            unsigned char b = 0;
 
-void MyFrame::OnMidpointFilter(wxCommandEvent & WXUNUSED(event)) {
+            b = max(tmpImage.GetBlue(i - 1, j - 1), b);
+            b = max(tmpImage.GetBlue(i - 1, j), b);
+            b = max(tmpImage.GetBlue(i - 1, j + 1), b);
+            b = max(tmpImage.GetBlue(i, j - 1), b);
+            b = max(tmpImage.GetBlue(i, j), b);
+            b = max(tmpImage.GetBlue(i, j + 1), b);
+            b = max(tmpImage.GetBlue(i + 1, j - 1), b);
+            b = max(tmpImage.GetBlue(i + 1, j), b);
+            b = max(tmpImage.GetBlue(i + 1, j + 1), b);
 
-  printf("Applying Midpoint Filter...");
-  wxImage tmpImage = loadedImage.Copy();
-
-  for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-      for(int j=1; j < loadedImage.GetHeight()-1; j++) {
-
-        unsigned char maxPixel = 0;
-
-        maxPixel = max(tmpImage.GetRed(i-1,j-1),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i-1,j),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i-1,j+1),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i,j-1),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i,j),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i,j+1),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i+1,j-1),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i+1,j),maxPixel);
-        maxPixel = max(tmpImage.GetRed(i+1,j+1),maxPixel);
-
-        unsigned char minPixel = 255;
-
-        minPixel = min(tmpImage.GetRed(i-1,j-1),minPixel);
-        minPixel = min(tmpImage.GetRed(i-1,j),minPixel);
-        minPixel = min(tmpImage.GetRed(i-1,j+1),minPixel);
-        minPixel = min(tmpImage.GetRed(i,j-1),minPixel);
-        minPixel = min(tmpImage.GetRed(i,j),minPixel);
-        minPixel = min(tmpImage.GetRed(i,j+1),minPixel);
-        minPixel = min(tmpImage.GetRed(i+1,j-1),minPixel);
-        minPixel = min(tmpImage.GetRed(i+1,j),minPixel);
-        minPixel = min(tmpImage.GetRed(i+1,j+1),minPixel);
-
-        unsigned char midpoint = ((int)maxPixel + (int)minPixel)/2;
-
-        loadedImage.SetRGB(i, j, midpoint, midpoint, midpoint);
-     }
-  }
-
-  tmpImage.Destroy();
-
-  printf("Finished Midpoint Filter.\n");
-  Refresh();
-}
-
-void MyFrame::OnMedianFilter(wxCommandEvent & WXUNUSED(event)) {
-
-  printf("Applying Max Filter...");
-  wxImage tmpImage = loadedImage.Copy();
-
-  for(int i=1; i < loadedImage.GetWidth()-1; i++) {
-      for(int j=1; j < loadedImage.GetHeight()-1; j++) {
-        unsigned char pixels[9];
-
-        pixels[0] = tmpImage.GetRed(i-1,j-1);
-        pixels[1] = tmpImage.GetRed(i-1,j);
-        pixels[2] = tmpImage.GetRed(i-1,j+1);
-        pixels[3] = tmpImage.GetRed(i,j-1);
-        pixels[4] = tmpImage.GetRed(i,j);
-        pixels[5] = tmpImage.GetRed(i,j+1);
-        pixels[6] = tmpImage.GetRed(i+1,j-1);
-        pixels[7] = tmpImage.GetRed(i+1,j);
-        pixels[8] = tmpImage.GetRed(i+1,j+1);
-
-        sort(pixels,pixels + sizeof pixels / sizeof pixels[0]);
-
-        loadedImage.SetRGB(i, j, pixels[4], pixels[4], pixels[4]);
-     }
-  }
-
-  tmpImage.Destroy();
-
-  printf("Finished Applying Max Filter.\n");
-  Refresh();
-}
-
-void MyFrame::OnNegative(wxCommandEvent & WXUNUSED(event)) {
-
-  printf("Applying Negative Filter...");
-  wxImage tmpImage = loadedImage.Copy();
-
-  for(int i=0; i < loadedImage.GetWidth(); i++) {
-      for(int j=0; j < loadedImage.GetHeight(); j++) {
-        int originalPixel = loadedImage.GetRed(i,j);
-        int pixel = abs(originalPixel - 255);
-        loadedImage.SetRGB(i, j, pixel, pixel, pixel);
-     }
-  }
-
-  tmpImage.Destroy();
-
-  printf("Finished Negative Filter.\n");
-  Refresh();
-}
-
-void MyFrame::OnLog(wxCommandEvent & WXUNUSED(event)) {
-
-  printf("Applying Log Filter...");
-  wxImage tmpImage = loadedImage.Copy();
-  for(int i = 0; i < loadedImage.GetWidth(); i++) {
-      for(int j = 0; j < loadedImage.GetHeight(); j++) {
-        int constant = 70;
-        int originalPixel = loadedImage.GetRed(i,j);
-        long pixel = constant * log(originalPixel + 1);
-        if(pixel > 255) {
-          pixel = 255;
+            loadedImage.SetRGB(i, j, r, g, b);
         }
+    }
 
-        loadedImage.SetRGB(i, j, pixel, pixel, pixel);
-     }
-  }
+    tmpImage.Destroy();
 
-  tmpImage.Destroy();
-
-  printf("Finished Log Filter.\n");
-  Refresh();
+    printf("Finished Applying Max Filter.\n");
+    Refresh();
 }
 
-void MyFrame::OnPower(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnMidpointFilter(wxCommandEvent& WXUNUSED(event))
+{
 
-  printf("Applying Max Filter...");
-  wxImage tmpImage = loadedImage.Copy();
+    printf("Applying Midpoint Filter...");
+    wxImage tmpImage = loadedImage.Copy();
 
-  for(int i = 0; i < loadedImage.GetWidth(); i++) {
-      for(int j = 0; j < loadedImage.GetHeight(); j++) {
-        double constant = 10;
-        double gamma = 0.8;
+    for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY + 1; j < mouseUpY -1; j++) {
 
-        int originalPixel = loadedImage.GetRed(i,j);
-        long pixel = constant * pow((originalPixel), gamma);
-        if(pixel > 255) {
-          pixel = 255;
+            unsigned char maxPixel = 0;
+            unsigned char minPixel = 255;
+
+            maxPixel = max(tmpImage.GetRed(i - 1, j - 1), maxPixel);
+            maxPixel = max(tmpImage.GetRed(i - 1, j), maxPixel);
+            maxPixel = max(tmpImage.GetRed(i - 1, j + 1), maxPixel);
+            maxPixel = max(tmpImage.GetRed(i, j - 1), maxPixel);
+            maxPixel = max(tmpImage.GetRed(i, j), maxPixel);
+            maxPixel = max(tmpImage.GetRed(i, j + 1), maxPixel);
+            maxPixel = max(tmpImage.GetRed(i + 1, j - 1), maxPixel);
+            maxPixel = max(tmpImage.GetRed(i + 1, j), maxPixel);
+            maxPixel = max(tmpImage.GetRed(i + 1, j + 1), maxPixel);
+
+            minPixel = min(tmpImage.GetRed(i - 1, j - 1), minPixel);
+            minPixel = min(tmpImage.GetRed(i - 1, j), minPixel);
+            minPixel = min(tmpImage.GetRed(i - 1, j + 1), minPixel);
+            minPixel = min(tmpImage.GetRed(i, j - 1), minPixel);
+            minPixel = min(tmpImage.GetRed(i, j), minPixel);
+            minPixel = min(tmpImage.GetRed(i, j + 1), minPixel);
+            minPixel = min(tmpImage.GetRed(i + 1, j - 1), minPixel);
+            minPixel = min(tmpImage.GetRed(i + 1, j), minPixel);
+            minPixel = min(tmpImage.GetRed(i + 1, j + 1), minPixel);
+
+            unsigned char r = ((int)maxPixel + (int)minPixel) / 2;
+
+            maxPixel = 0;
+            minPixel = 255;
+
+            maxPixel = max(tmpImage.GetGreen(i - 1, j - 1), maxPixel);
+            maxPixel = max(tmpImage.GetGreen(i - 1, j), maxPixel);
+            maxPixel = max(tmpImage.GetGreen(i - 1, j + 1), maxPixel);
+            maxPixel = max(tmpImage.GetGreen(i, j - 1), maxPixel);
+            maxPixel = max(tmpImage.GetGreen(i, j), maxPixel);
+            maxPixel = max(tmpImage.GetGreen(i, j + 1), maxPixel);
+            maxPixel = max(tmpImage.GetGreen(i + 1, j - 1), maxPixel);
+            maxPixel = max(tmpImage.GetGreen(i + 1, j), maxPixel);
+            maxPixel = max(tmpImage.GetGreen(i + 1, j + 1), maxPixel);
+
+            minPixel = min(tmpImage.GetGreen(i - 1, j - 1), minPixel);
+            minPixel = min(tmpImage.GetGreen(i - 1, j), minPixel);
+            minPixel = min(tmpImage.GetGreen(i - 1, j + 1), minPixel);
+            minPixel = min(tmpImage.GetGreen(i, j - 1), minPixel);
+            minPixel = min(tmpImage.GetGreen(i, j), minPixel);
+            minPixel = min(tmpImage.GetGreen(i, j + 1), minPixel);
+            minPixel = min(tmpImage.GetGreen(i + 1, j - 1), minPixel);
+            minPixel = min(tmpImage.GetGreen(i + 1, j), minPixel);
+            minPixel = min(tmpImage.GetGreen(i + 1, j + 1), minPixel);
+
+            unsigned char g = ((int)maxPixel + (int)minPixel) / 2;
+
+            maxPixel = 0;
+            minPixel = 255;
+
+            maxPixel = max(tmpImage.GetBlue(i - 1, j - 1), maxPixel);
+            maxPixel = max(tmpImage.GetBlue(i - 1, j), maxPixel);
+            maxPixel = max(tmpImage.GetBlue(i - 1, j + 1), maxPixel);
+            maxPixel = max(tmpImage.GetBlue(i, j - 1), maxPixel);
+            maxPixel = max(tmpImage.GetBlue(i, j), maxPixel);
+            maxPixel = max(tmpImage.GetBlue(i, j + 1), maxPixel);
+            maxPixel = max(tmpImage.GetBlue(i + 1, j - 1), maxPixel);
+            maxPixel = max(tmpImage.GetBlue(i + 1, j), maxPixel);
+            maxPixel = max(tmpImage.GetBlue(i + 1, j + 1), maxPixel);
+
+            minPixel = min(tmpImage.GetBlue(i - 1, j - 1), minPixel);
+            minPixel = min(tmpImage.GetBlue(i - 1, j), minPixel);
+            minPixel = min(tmpImage.GetBlue(i - 1, j + 1), minPixel);
+            minPixel = min(tmpImage.GetBlue(i, j - 1), minPixel);
+            minPixel = min(tmpImage.GetBlue(i, j), minPixel);
+            minPixel = min(tmpImage.GetBlue(i, j + 1), minPixel);
+            minPixel = min(tmpImage.GetBlue(i + 1, j - 1), minPixel);
+            minPixel = min(tmpImage.GetBlue(i + 1, j), minPixel);
+            minPixel = min(tmpImage.GetBlue(i + 1, j + 1), minPixel);
+
+            unsigned char b = ((int)maxPixel + (int)minPixel) / 2;
+
+            loadedImage.SetRGB(i, j, r, g, b);
         }
+    }
 
-        loadedImage.SetRGB(i, j, pixel, pixel, pixel);
-     }
-  }
+    tmpImage.Destroy();
 
-  tmpImage.Destroy();
-
-  printf("Finished Applying Max Filter.\n");
-  Refresh();
+    printf("Finished Midpoint Filter.\n");
+    Refresh();
 }
 
-void MyFrame::OnHistogramEqualize(wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnMedianFilter(wxCommandEvent& WXUNUSED(event))
+{
 
-  printf("Applying Histogram Equalization...");
-  wxImage tmpImage = loadedImage.Copy();
-  map<int,double> pixelValMap;
+    printf("Applying Median Filter...");
+    wxImage tmpImage = loadedImage.Copy();
 
-  int count = 0;
+    for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
+            unsigned char pixels[9];
 
-  for(int i = 0; i < loadedImage.GetWidth(); i++) {
-      for(int j = 0; j < loadedImage.GetHeight(); j++) {
+            pixels[0] = tmpImage.GetRed(i - 1, j - 1);
+            pixels[1] = tmpImage.GetRed(i - 1, j);
+            pixels[2] = tmpImage.GetRed(i - 1, j + 1);
+            pixels[3] = tmpImage.GetRed(i, j - 1);
+            pixels[4] = tmpImage.GetRed(i, j);
+            pixels[5] = tmpImage.GetRed(i, j + 1);
+            pixels[6] = tmpImage.GetRed(i + 1, j - 1);
+            pixels[7] = tmpImage.GetRed(i + 1, j);
+            pixels[8] = tmpImage.GetRed(i + 1, j + 1);
 
-        int originalPixel = loadedImage.GetRed(i,j);
+            sort(pixels, pixels + sizeof pixels / sizeof pixels[0]);
 
-        if(pixelValMap.count(originalPixel) > 0) {
-          pixelValMap[originalPixel] = pixelValMap[originalPixel] + 1.0;
-        } else {
-          pixelValMap[originalPixel] = 1.0;
+            unsigned char r = pixels[4];
+
+            pixels[0] = tmpImage.GetGreen(i - 1, j - 1);
+            pixels[1] = tmpImage.GetGreen(i - 1, j);
+            pixels[2] = tmpImage.GetGreen(i - 1, j + 1);
+            pixels[3] = tmpImage.GetGreen(i, j - 1);
+            pixels[4] = tmpImage.GetGreen(i, j);
+            pixels[5] = tmpImage.GetGreen(i, j + 1);
+            pixels[6] = tmpImage.GetGreen(i + 1, j - 1);
+            pixels[7] = tmpImage.GetGreen(i + 1, j);
+            pixels[8] = tmpImage.GetGreen(i + 1, j + 1);
+
+            sort(pixels, pixels + sizeof pixels / sizeof pixels[0]);
+
+            unsigned char g = pixels[4];
+
+            pixels[0] = tmpImage.GetBlue(i - 1, j - 1);
+            pixels[1] = tmpImage.GetBlue(i - 1, j);
+            pixels[2] = tmpImage.GetBlue(i - 1, j + 1);
+            pixels[3] = tmpImage.GetBlue(i, j - 1);
+            pixels[4] = tmpImage.GetBlue(i, j);
+            pixels[5] = tmpImage.GetBlue(i, j + 1);
+            pixels[6] = tmpImage.GetBlue(i + 1, j - 1);
+            pixels[7] = tmpImage.GetBlue(i + 1, j);
+            pixels[8] = tmpImage.GetBlue(i + 1, j + 1);
+
+            sort(pixels, pixels + sizeof pixels / sizeof pixels[0]);
+
+            unsigned char b = pixels[4];
+
+            loadedImage.SetRGB(i, j, r, g, b);
         }
+    }
 
-        count++;
-     }
+    tmpImage.Destroy();
+
+    printf("Finished Applying Median Filter.\n");
+    Refresh();
+}
+
+void MyFrame::OnNegative(wxCommandEvent& WXUNUSED(event))
+{
+
+    printf("Applying Negative Filter...");
+    wxImage tmpImage = loadedImage.Copy();
+
+    for (int i = mouseDownX; i < mouseUpX; i++) {
+        for (int j = mouseDownY; j < mouseUpY; j++) {
+            loadedImage.SetRGB(i, j, 255 - tmpImage.GetRed(i,j), 255 - tmpImage.GetGreen(i,j), 255 - tmpImage.GetBlue(i,j));
+        }
+    }
+
+    tmpImage.Destroy();
+
+    printf("Finished Negative Filter.\n");
+    Refresh();
+}
+
+void MyFrame::OnLog(wxCommandEvent& WXUNUSED(event))
+{
+
+    printf("Applying Log Filter...");
+
+    long constant = 0;
+    wxString valueTyped;
+    wxTextEntryDialog myDialog(this, _("Enter the Constant Value:"), _("Log Filter"), _(""));
+    if (myDialog.ShowModal() == wxID_OK) {
+        valueTyped = myDialog.GetValue();
+        if (!valueTyped.ToLong(&constant)) {
+            return;
+        }
+    }
+    else {
+        return;
+    }
+
+
+    wxImage tmpImage = loadedImage.Copy();
+    for (int i = mouseDownX; i < mouseUpX; i++) {
+        for (int j = mouseDownY; j < mouseUpY; j++) {
+            unsigned char r = loadedImage.GetRed(i, j);
+            long newR = constant * log(r + 1);
+            newR = (newR > 255) ? 255 : newR;
+
+            unsigned char g = loadedImage.GetGreen(i, j);
+            long newG = constant * log(g + 1);
+            newG = (newG > 255) ? 255 : newG;
+
+            unsigned char b = loadedImage.GetBlue(i, j);
+            long newB  = constant * log(b + 1);
+            newB = (newB > 255) ? 255 : newR;
+
+            loadedImage.SetRGB(i, j, newR, newG, newB);
+        }
+    }
+
+    tmpImage.Destroy();
+
+    printf("Finished Log Filter.\n");
+    Refresh();
+}
+
+void MyFrame::OnPower(wxCommandEvent& WXUNUSED(event))
+{
+  long constant = 0;
+  wxString valueTyped;
+  wxTextEntryDialog constantDialog(this, _("Enter the Constant Value:"), _("pow Filter"), _(""));
+  if (constantDialog.ShowModal() == wxID_OK) {
+      valueTyped = constantDialog.GetValue();
+      if (!valueTyped.ToLong(&constant)) {
+          return;
+      }
+  }
+  else {
+      return;
   }
 
-  int pixelSize = pixelValMap.size() - 1;
-  double cumalative = 0;
-
-
-
-  typedef std::map<int, double>::iterator it_type;
-  for(it_type iterator = pixelValMap.begin(); iterator != pixelValMap.end(); iterator++) {
-      cumalative += iterator->second;
-      iterator->second = round((cumalative*pixelSize)/count);
-      cout << iterator->first << " | " << iterator->second << endl;
+  double gamma = 0;
+  wxTextEntryDialog gammaDialog(this, _("Enter the Gamma Value:"), _("Pow Filter"), _(""));
+  if (gammaDialog.ShowModal() == wxID_OK) {
+      valueTyped = gammaDialog.GetValue();
+      if (!valueTyped.ToDouble(&gamma)) {
+          return;
+      }
+  }
+  else {
+      return;
   }
 
-  for(int i = 0; i < loadedImage.GetWidth(); i++) {
-      for(int j = 0; j < loadedImage.GetHeight(); j++) {
+    printf("Applying Pow Filter...");
+    wxImage tmpImage = loadedImage.Copy();
 
-        int originalPixel = loadedImage.GetRed(i,j);
+    for (int i = mouseDownX; i < mouseUpX; i++) {
+        for (int j = mouseDownY; j < mouseUpY; j++) {
 
-        if(pixelValMap.count(originalPixel) > 0) {
-          unsigned char pixel = pixelValMap[originalPixel];
-          loadedImage.SetRGB(i, j, pixel, pixel, pixel);
+            unsigned char r = loadedImage.GetRed(i, j);
+            long newR = constant * pow((r), gamma);
+            newR = (newR > 255) ? 255 : newR;
+
+            unsigned char g = loadedImage.GetGreen(i, j);
+            long newG = constant * pow((g), gamma);
+            newG = (newG > 255) ? 255 : newG;
+
+            unsigned char b = loadedImage.GetBlue(i, j);
+            long newB  = constant * pow((b), gamma);
+            newB = (newB > 255) ? 255 : newR;
+
+            loadedImage.SetRGB(i, j, newR, newG, newB);
 
         }
-     }
-  }
+    }
+
+    tmpImage.Destroy();
+
+    printf("Finished Applying Pow Filter.\n");
+    Refresh();
+}
+
+void MyFrame::OnRandomLookupTable(wxCommandEvent& WXUNUSED(event))
+{
+
+    printf("Applying Random Lookup Table...");
+    wxImage tmpImage = loadedImage.Copy();
+    map<unsigned char, unsigned char> redPixelMap;
+    map<unsigned char, unsigned char> greenPixelMap;
+    map<unsigned char, unsigned char> bluePixelMap;
+    srand(time(NULL));
+
+    for (int i = mouseDownX; i < mouseUpX; i++) {
+        for (int j = mouseDownY; j < mouseUpY; j++) {
+            unsigned char r,g,b;
+
+            r = loadedImage.GetRed(i,j);
+            g = loadedImage.GetGreen(i,j);
+            b = loadedImage.GetBlue(i,j);
+
+            if(redPixelMap.count(r) == 0) {
+              redPixelMap[r] = rand() % 256;
+            }
+
+            if(greenPixelMap.count(g) == 0) {
+              greenPixelMap[g] = rand() % 256;
+            }
+            if(bluePixelMap.count(b) == 0) {
+              bluePixelMap[b] = rand() % 256;
+            }
+
+            loadedImage.SetRGB(i, j, redPixelMap[r], greenPixelMap[g], bluePixelMap[b]);
+        }
+    }
+
+    tmpImage.Destroy();
+
+    printf("Finished Applying Random Lookup Table.\n");
+    Refresh();
+}
+
+void MyFrame::OnHistogramEqualize(wxCommandEvent& WXUNUSED(event))
+{
+
+    printf("Applying Histogram Equalization...");
+    wxImage tmpImage = loadedImage.Copy();
+    map<int, double> redPixelMap;
+    map<int, double> greenPixelMap;
+    map<int, double> bluePixelMap;
+
+    int count = 0;
+
+    for (int i = mouseDownX; i < mouseUpX; i++) {
+        for (int j = mouseDownY; j < mouseUpY; j++) {
+
+            int r = loadedImage.GetRed(i, j);
+            int g = loadedImage.GetGreen(i, j);
+            int b = loadedImage.GetBlue(i, j);
+
+            redPixelMap[r] = (redPixelMap.count(r) > 0) ? redPixelMap[r] + 1 : 1;
+            greenPixelMap[g] = (greenPixelMap.count(g) > 0) ? greenPixelMap[g] + 1 : 1;
+            bluePixelMap[b] = (bluePixelMap.count(b) > 0) ? bluePixelMap[b] + 1 : 1;
+
+            count++;
+        }
+    }
+
+    int redPixels = redPixelMap.size() - 1;
+    int greenPixels = greenPixelMap.size() - 1;
+    int bluePixels = bluePixelMap.size() - 1;
+
+    double cumalative = 0;
+
+    //red
+    typedef std::map<int, double>::iterator it_type;
+    for (it_type iterator = redPixelMap.begin(); iterator != redPixelMap.end(); iterator++) {
+        cumalative += iterator->second;
+        iterator->second = round((cumalative * redPixels) / count);
+    }
+
+    cumalative = 0;
+    //green
+    for (it_type iterator = greenPixelMap.begin(); iterator != greenPixelMap.end(); iterator++) {
+        cumalative += iterator->second;
+        iterator->second = round((cumalative * greenPixels) / count);
+    }
+
+    cumalative = 0;
+    //blue
+    for (it_type iterator = bluePixelMap.begin(); iterator != bluePixelMap.end(); iterator++) {
+        cumalative += iterator->second;
+        iterator->second = round((cumalative * bluePixels) / count);
+    }
+
+    for (int i = mouseDownX; i < mouseUpX; i++) {
+        for (int j = mouseDownY; j < mouseUpY; j++) {
+
+            int r = loadedImage.GetRed(i, j);
+            int g = loadedImage.GetGreen(i, j);
+            int b = loadedImage.GetBlue(i, j);
+
+            int newR = (redPixelMap.count(r) > 0) ? redPixelMap[r] : r;
+            int newG = (greenPixelMap.count(g) > 0) ? greenPixelMap[g] : g;
+            int newB = (bluePixelMap.count(b) > 0) ? bluePixelMap[b] : b;
+
+            loadedImage.SetRGB(i, j, newR, newG, newB);
+
+        }
+    }
+
+    tmpImage.Destroy();
+
+    printf("Finished Applying Histogram Equalization.\n");
+    Refresh();
+}
+
+void MyFrame::OnMeanAndStandardDeviation(wxCommandEvent& WXUNUSED(event))
+{
+
+    printf("Finding Mean And Standard Deviation...\n");
+    wxImage tmpImage = loadedImage.Copy();
+    map<unsigned char, unsigned char> pixelValMap;
+
+    int count = 0;
+
+    for (int i = mouseDownX; i < mouseUpX; i++) {
+        for (int j = mouseDownY; j < mouseUpY; j++) {
+
+            int originalPixel = loadedImage.GetRed(i, j);
+
+            if (pixelValMap.count(originalPixel) > 0) {
+                pixelValMap[originalPixel] = pixelValMap[originalPixel] + 1;
+            }
+            else {
+                pixelValMap[originalPixel] = 1;
+            }
+
+            count++;
+        }
+    }
+
+    double mean = 0;
+
+    typedef std::map<unsigned char, unsigned char>::iterator it_type;
+    for (it_type iterator = pixelValMap.begin(); iterator != pixelValMap.end(); iterator++) {
+        mean += (iterator->first * iterator->second);
+    }
+
+    mean = mean / count;
+    printf("Mean is:%f \n", mean);
+
+    double standardDeviation = 0;
+
+    for (it_type iterator = pixelValMap.begin(); iterator != pixelValMap.end(); iterator++) {
+        standardDeviation += pow(iterator->first - mean, 2);
+    }
+
+    standardDeviation *= 1.0 / (double)count;
+
+    printf("Standard Deviation is:%f \n", standardDeviation);
+    tmpImage.Destroy();
+    Refresh();
+}
+
+void MyFrame::OnSimpleThresholding(wxCommandEvent& WXUNUSED(event))
+{
+
+    printf("Applying Simple Thresholding\n");
+    wxImage tmpImage = loadedImage.Copy();
+    long threshold = 0;
+    wxString valueTyped;
+    wxTextEntryDialog myDialog(this, _("Enter the threshold value (0 to 255):"), _("Simple Threshold Value"), _(""));
+    if (myDialog.ShowModal() == wxID_OK) {
+        valueTyped = myDialog.GetValue();
+        if (!valueTyped.ToLong(&threshold)) {
+            return;
+        }
+    }
+    else {
+        return;
+    }
+
+    unsigned char r, g, b;
+
+    for (int i = mouseDownX; i < mouseUpX; i++) {
+        for (int j = mouseDownY; j < mouseUpY; j++) {
+
+            r = loadedImage.GetRed(i, j);
+            g = loadedImage.GetGreen(i, j);
+            b = loadedImage.GetBlue(i, j);
+
+            r = threshold > r ? 255 : 0;
+            g = threshold > g ? 255 : 0;
+            b = threshold > b ? 255 : 0;
+
+            loadedImage.SetRGB(i, j, r, g, b);
+        }
+    }
+
+    printf("Finished Applying Simple Thresholding.\n");
+    Refresh();
+}
+
+void MyFrame::OnAutomatedThresholding(wxCommandEvent& WXUNUSED(event))
+{
+
+    printf("Applying Automated Thresholding...\n");
+
+    wxImage tmpImage = loadedImage.Copy();
+    map<unsigned char, unsigned char> redPixelMap;
+    map<unsigned char, unsigned char> greenPixelMap;
+    map<unsigned char, unsigned char> bluePixelMap;
+
+    int count = 0;
+
+    for (int i = mouseDownX; i < mouseUpX; i++) {
+        for (int j = mouseDownY; j < mouseUpY; j++) {
+
+          int r = loadedImage.GetRed(i, j);
+          int g = loadedImage.GetGreen(i, j);
+          int b = loadedImage.GetBlue(i, j);
 
 
-  tmpImage.Destroy();
+          redPixelMap[r] = (redPixelMap.count(r) > 0) ? redPixelMap[r] + 1 : 1;
+          greenPixelMap[r] = (greenPixelMap.count(g) > 0) ? greenPixelMap[g] + 1 : 1;
+          bluePixelMap[r] = (bluePixelMap.count(b) > 0) ? bluePixelMap[b] + 1 : 1;
 
-  printf("Finished Applying Histogram Equalization.\n");
-  Refresh();
+            count++;
+        }
+    }
+
+    double redMean = 0, greenMean = 0, blueMean = 0;
+
+    typedef std::map<unsigned char, unsigned char>::iterator it_type;
+
+    for (it_type iterator = redPixelMap.begin(); iterator != redPixelMap.end(); iterator++) {
+        redMean += (iterator->first * iterator->second);
+    }
+    for (it_type iterator = greenPixelMap.begin(); iterator != greenPixelMap.end(); iterator++) {
+        greenMean += (iterator->first * iterator->second);
+    }
+    for (it_type iterator = bluePixelMap.begin(); iterator != bluePixelMap.end(); iterator++) {
+        blueMean += (iterator->first * iterator->second);
+    }
+
+    redMean = redMean / count;
+    blueMean = blueMean / count;
+    greenMean = greenMean / count;
+
+    double redThreshold = redMean;
+    double blueThreshold = blueMean;
+    double greenThreshold = greenMean;
+
+    double start = 0;
+    double end = 255;
+    double prevMean1 = 0;
+    double prevMean2 = 0;
+    double mean1 = 1;
+    double mean2 = 1;
+
+
+    while (prevMean1 != mean1 && prevMean2 != mean2) {
+        prevMean1 = mean1;
+        prevMean2 = mean2;
+        mean1 = getMeanOfHistogramRange(redPixelMap, start, redThreshold);
+        mean2 = getMeanOfHistogramRange(redPixelMap, redThreshold, end);
+        redThreshold = (mean1 + mean2) / 2;
+    }
+
+     prevMean1 = 0;
+     prevMean2 = 0;
+     mean1 = 1;
+     mean2 = 1;
+
+
+    while (prevMean1 != mean1 && prevMean2 != mean2) {
+        prevMean1 = mean1;
+        prevMean2 = mean2;
+        mean1 = getMeanOfHistogramRange(greenPixelMap, start, greenThreshold);
+        mean2 = getMeanOfHistogramRange(greenPixelMap, greenThreshold, end);
+        greenThreshold = (mean1 + mean2) / 2;
+    }
+
+    prevMean1 = 0;
+    prevMean2 = 0;
+    mean1 = 1;
+    mean2 = 1;
+
+
+   while (prevMean1 != mean1 && prevMean2 != mean2) {
+       prevMean1 = mean1;
+       prevMean2 = mean2;
+       mean1 = getMeanOfHistogramRange(bluePixelMap, start, blueThreshold);
+       mean2 = getMeanOfHistogramRange(bluePixelMap, blueThreshold, end);
+       blueThreshold = (mean1 + mean2) / 2;
+   }
+
+
+    unsigned char r, g, b;
+
+    for (int i = mouseDownX; i < mouseUpX; i++) {
+        for (int j = mouseDownY; j < mouseUpY; j++) {
+
+            r = loadedImage.GetRed(i, j);
+            g = loadedImage.GetGreen(i, j);
+            b = loadedImage.GetBlue(i, j);
+
+            r = redThreshold > r ? 255 : 0;
+            g = greenThreshold > g ? 255 : 0;
+            b = blueThreshold > b ? 255 : 0;
+
+            loadedImage.SetRGB(i, j, r, g, b);
+        }
+    }
+
+    printf("Finished Applying Automated Thresholding.\n");
+    Refresh();
+}
+
+double MyFrame::getMeanOfHistogramRange(map<unsigned char, unsigned char> pixelValueMap, double start, double end)
+{
+    int count = 0;
+    double mean = 0;
+
+    typedef std::map<unsigned char, unsigned char>::iterator it_type;
+    for (it_type iterator = pixelValueMap.begin(); iterator != pixelValueMap.end(); iterator++) {
+        if (iterator->first >= start && iterator->first <= end) {
+            count += iterator->second;
+            mean += (iterator->first * iterator->second);
+        }
+    }
+
+    mean = mean / count;
+    if(isnan(mean)) {
+      return 0;
+    }
+    return mean;
 }
 
 //IMAGE SAVING
-void MyFrame::OnSaveImage(wxCommandEvent & WXUNUSED(event)) {
+
+void MyFrame::OnMouseDown(wxMouseEvent& event)
+{
+  if(canSelect) {
+    mouseDownX = event.GetPosition().x;
+    mouseDownY = event.GetPosition().y;
+    event.Skip();
+  }
+}
+
+void MyFrame::OnMouseUp(wxMouseEvent& event)
+{
+
+  if(canSelect) {
+  mouseUpX = event.GetPosition().x;
+  mouseUpY = event.GetPosition().y;
+
+    for (int i = mouseDownX; i < mouseUpX && mouseDownX < loadedImage.GetWidth() && mouseUpX < loadedImage.GetWidth(); i++) {
+        loadedImage.SetRGB(i, mouseDownY, 255, 255, 255);
+    }
+
+    for (int i = mouseDownY; i < mouseUpY && mouseDownY < loadedImage.GetHeight() && mouseUpY < loadedImage.GetHeight();  i++) {
+        loadedImage.SetRGB(mouseDownX, i, 255, 255, 255);
+    }
+
+    for(int i = mouseDownY; i <  mouseUpY && mouseDownY < loadedImage.GetHeight() && mouseUpY < loadedImage.GetHeight(); i++) {
+      loadedImage.SetRGB(mouseUpX, i, 255, 255, 255);
+    }
+
+    for(int i = mouseDownX; i <  mouseUpX && mouseDownX < loadedImage.GetWidth() && mouseUpX < loadedImage.GetWidth(); i++) {
+      loadedImage.SetRGB(i, mouseUpY, 255, 255, 255);
+    }
+
+
+    for (int i = mouseDownX; i < mouseUpX && mouseDownX < loadedImage.GetWidth() && mouseUpX < loadedImage.GetWidth(); i++) {
+        loadedImage.SetRGB(i, mouseDownY, 255, 255, 255);
+    }
+
+    for (int i = mouseDownY; i < mouseUpY && mouseDownY < loadedImage.GetHeight() && mouseUpY < loadedImage.GetHeight();  i++) {
+        loadedImage.SetRGB(mouseDownX, i, 255, 255, 255);
+    }
+
+    for(int i = mouseDownY; i <  mouseUpY && mouseDownY < loadedImage.GetHeight() && mouseUpY < loadedImage.GetHeight(); i++) {
+      loadedImage.SetRGB(mouseUpX, i, 255, 255, 255);
+    }
+
+    for(int i = mouseDownX; i <  mouseUpX && mouseDownX < loadedImage.GetWidth() && mouseUpX < loadedImage.GetWidth(); i++) {
+      loadedImage.SetRGB(i, mouseUpY, 255, 255, 255);
+    }
+
+
+    canSelect = false;
+    Refresh();
+}
+  event.Skip();
+
+}
+
+void MyFrame::OnSelect(wxCommandEvent& WXUNUSED(event))
+{
+
+    printf("Waiting for user to select...");
+    canSelect = true;
+
+    wxMessageBox( wxT("Please drag your mouse to select a region of the image") );
+    printf("Finished selecting.\n");
+    Refresh();
+}
+
+void MyFrame::OnUnSelect(wxCommandEvent& WXUNUSED(event))
+{
+
+    printf("Unselected");
+    mouseDownX = 0;
+    mouseDownY = 0;
+    mouseUpX = loadedImage.GetWidth();
+    mouseUpY = loadedImage.GetHeight();
+    Refresh();
+}
+
+
+
+void MyFrame::OnSaveImage(wxCommandEvent& WXUNUSED(event))
+{
 
     printf("Saving image...");
 
     loadedImage.SaveFile(wxT("Saved_Image.bmp"), wxBITMAP_TYPE_BMP);
 
+
     printf("Finished Saving.\n");
 }
 
-void MyFrame::OnExit (wxCommandEvent & WXUNUSED(event)) {
+void MyFrame::OnExit(wxCommandEvent& WXUNUSED(event))
+{
 
     Close(TRUE);
 }
 
-void MyFrame::OnPaint(wxPaintEvent & WXUNUSED(event)) {
+void MyFrame::OnPaint(wxPaintEvent& WXUNUSED(event))
+{
 
     wxAutoBufferedPaintDC dc(this);
-    if(loadedImage.Ok()) {
-        dc.DrawBitmap(wxBitmap(loadedImage), 0, 0, false);//given bitmap xcoord y coord and transparency
+    if (loadedImage.Ok()) {
+        undoStack.push(loadedImage.Copy());
+        origImageStack.push(origImage.Copy());
+        dc.DrawBitmap(wxBitmap(loadedImage), 0, 0, false); //given bitmap xcoord y coord and transparency
     }
+
 }
 
-BEGIN_EVENT_TABLE (MyFrame, wxFrame)
-    EVT_MENU ( LOAD_FILE_ID,  MyFrame::OnOpenFile)
-    EVT_MENU ( EXIT_ID,  MyFrame::OnExit)
+BEGIN_EVENT_TABLE(MyFrame, wxFrame)
+EVT_MENU(LOAD_FILE_ID, MyFrame::OnOpenFile)
+EVT_MENU(EXIT_ID, MyFrame::OnExit)
 
 //###########################################################//
 //----------------------START MY EVENTS ---------------------//
 //###########################################################//
 
-    EVT_MENU ( RESET_IMAGE_ID,  MyFrame::OnResetImage)
-    EVT_MENU ( INVERT_IMAGE_ID,  MyFrame::OnInvertImage)
-    EVT_MENU ( SCALE_IMAGE_ID,  MyFrame::OnScaleImage)
-    EVT_MENU ( SAVE_IMAGE_ID,  MyFrame::OnSaveImage)
-    EVT_MENU ( PIXEL_SHIFT_ID,  MyFrame::OnPixelShift)//--->To be modified!
-    EVT_MENU ( OPEN_RAW_ID,  MyFrame::OnOpenRawFile)//--->To be modified!
-    EVT_MENU ( SAVE_RAW_TO_JPG,  MyFrame::OnConvertRawToJPG)//--->To be modified!
-    EVT_MENU ( AVERAGE_FILTER_ID,  MyFrame::OnAverageFilter)//--->To be modified!
-    EVT_MENU ( WEIGHTED_AVERAGE_FILTER_ID,  MyFrame::OnWeightedAverageFilter)//--->To be modified!
-    EVT_MENU ( FOUR_NEIGHBOUR_FILTER_ID,  MyFrame::On4NeighbourFilter)//--->To be modified!
-    EVT_MENU ( EIGHT_NEIGHBOUR_FILTER_ID,  MyFrame::On8NeighbourFilter)//--->To be modified!
-    EVT_MENU ( FOUR_NEIGHBOUR_LAPLACIAN_ENHANCEMENT_FILTER_ID,  MyFrame::On4NeighbourLaplacianEnhancementFilter)//--->To be modified!
-    EVT_MENU ( EIGHT_NEIGHBOUR_LAPLACIAN_ENHANCEMENT_FILTER_ID,  MyFrame::On8NeighbourLaplacianEnhancementFilter)//--->To be modified!
-    EVT_MENU ( ROBERTS_ID,  MyFrame::OnRobertsFilter)//--->To be modified!
-    EVT_MENU ( SOBEL_X,  MyFrame::OnSobelXFilter)//--->To be modified!
-    EVT_MENU ( SOBEL_Y,  MyFrame::OnSobelYFilter)//--->To be modified!
-    EVT_MENU ( SALT_AND_PEPPER_ID,  MyFrame::OnSaltAndPepper)//--->To be modified!
-    EVT_MENU ( MIN_ID,  MyFrame::OnMinFilter)//--->To be modified!
-    EVT_MENU ( MAX_ID,  MyFrame::OnMaxFilter)//--->To be modified!
-    EVT_MENU ( MIDPOINT_ID,  MyFrame::OnMidpointFilter)//--->To be modified!
-    EVT_MENU ( MEDIAN_ID,  MyFrame::OnMedianFilter)//--->To be modified!
-    EVT_MENU ( NEGATIVE_ID,  MyFrame::OnNegative)//--->To be modified!
-    EVT_MENU ( LOG_ID,  MyFrame::OnLog)//--->To be modified!
-    EVT_MENU ( POWER_ID,  MyFrame::OnPower)//--->To be modified!
-    EVT_MENU ( HISTOGRAM_EQUALIZE,  MyFrame::OnHistogramEqualize)//--->To be modified!
+EVT_MENU(RESET_IMAGE_ID, MyFrame::OnResetImage)
+EVT_MENU(UNDO, MyFrame::OnUndo)
+EVT_MENU(SCALE_IMAGE_ID, MyFrame::OnScaleImage)
+EVT_MENU(SAVE_IMAGE_ID, MyFrame::OnSaveImage)
+EVT_MENU(PIXEL_SHIFT_ID, MyFrame::OnPixelShift) //--->To be modified!
+EVT_MENU(OPEN_RAW_ID, MyFrame::OnOpenRawFile) //--->To be modified!
+EVT_MENU(SAVE_RAW_TO_JPG, MyFrame::OnConvertRawToJPG) //--->To be modified!
+EVT_MENU(AVERAGE_FILTER_ID, MyFrame::OnAverageFilter) //--->To be modified!
+EVT_MENU(WEIGHTED_AVERAGE_FILTER_ID, MyFrame::OnWeightedAverageFilter) //--->To be modified!
+EVT_MENU(FOUR_NEIGHBOUR_FILTER_ID, MyFrame::On4NeighbourFilter) //--->To be modified!
+EVT_MENU(EIGHT_NEIGHBOUR_FILTER_ID, MyFrame::On8NeighbourFilter) //--->To be modified!
+EVT_MENU(FOUR_NEIGHBOUR_LAPLACIAN_ENHANCEMENT_FILTER_ID, MyFrame::On4NeighbourLaplacianEnhancementFilter) //--->To be modified!
+EVT_MENU(EIGHT_NEIGHBOUR_LAPLACIAN_ENHANCEMENT_FILTER_ID, MyFrame::On8NeighbourLaplacianEnhancementFilter) //--->To be modified!
+EVT_MENU(ROBERTS_ID, MyFrame::OnRobertsFilter) //--->To be modified!
+EVT_MENU(SOBEL_X, MyFrame::OnSobelXFilter) //--->To be modified!
+EVT_MENU(SOBEL_Y, MyFrame::OnSobelYFilter) //--->To be modified!
+EVT_MENU(SALT_AND_PEPPER_ID, MyFrame::OnSaltAndPepper) //--->To be modified!
+EVT_MENU(MIN_ID, MyFrame::OnMinFilter) //--->To be modified!
+EVT_MENU(MAX_ID, MyFrame::OnMaxFilter) //--->To be modified!
+EVT_MENU(MIDPOINT_ID, MyFrame::OnMidpointFilter) //--->To be modified!
+EVT_MENU(MEDIAN_ID, MyFrame::OnMedianFilter) //--->To be modified!
+EVT_MENU(NEGATIVE_ID, MyFrame::OnNegative) //--->To be modified!
+EVT_MENU(LOG_ID, MyFrame::OnLog) //--->To be modified!
+EVT_MENU(POWER_ID, MyFrame::OnPower) //--->To be modified!
+EVT_MENU(HISTOGRAM_EQUALIZE, MyFrame::OnHistogramEqualize) //--->To be modified!
+EVT_MENU(RANDOM_LOOKUP_TABLE, MyFrame::OnRandomLookupTable) //--->To be modified!
+EVT_MENU(MEAN_AND_STANDARD_DEVIATION, MyFrame::OnMeanAndStandardDeviation) //--->To be modified!
+EVT_MENU(SIMPLE_THRESHOLDING, MyFrame::OnSimpleThresholding) //--->To be modified!
+EVT_MENU(AUTOMATED_THRESHOLDING, MyFrame::OnAutomatedThresholding) //--->To be modified!
+EVT_MENU(SELECT, MyFrame::OnSelect) //--->To be modified!
+EVT_MENU(UNSELECT, MyFrame::OnUnSelect) //--->To be modified!
 
+EVT_LEFT_DOWN ( MyFrame::OnMouseDown )
+EVT_LEFT_UP ( MyFrame::OnMouseUp )
 
 
 
@@ -1291,5 +2073,5 @@ BEGIN_EVENT_TABLE (MyFrame, wxFrame)
 //----------------------END MY EVENTS -----------------------//
 //###########################################################//
 
-    EVT_PAINT (MyFrame::OnPaint)
+EVT_PAINT(MyFrame::OnPaint)
 END_EVENT_TABLE()
