@@ -1,1 +1,0 @@
-/bin/c++    -Wall -Wextra -pedantic -pthread   CMakeFiles/window.dir/src/window.cpp.o  -o window -rdynamic -pthread -lwx_baseu_net-3.0 -lwx_gtk3u_gl-3.0 -lwx_gtk3u_core-3.0 -lwx_baseu-3.0 

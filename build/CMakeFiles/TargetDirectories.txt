@@ -1,3 +1,0 @@
-/homes/mb316/Desktop/Image-Processing/build/CMakeFiles/edit_cache.dir
-/homes/mb316/Desktop/Image-Processing/build/CMakeFiles/rebuild_cache.dir
-/homes/mb316/Desktop/Image-Processing/build/CMakeFiles/window.dir
