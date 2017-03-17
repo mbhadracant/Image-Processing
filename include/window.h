@@ -21,7 +21,7 @@ class MyFrame : public wxFrame {
         bool canSelect, selected;
         int oldWidth, oldHeight; // save old dimensions
         int mouseDownX, mouseDownY, mouseUpX, mouseUpY;
-        wxImage loadedImage, origImage; // image loaded from file and original placeholder
+        wxImage loadedImage, origImage, tmpImage; // image loaded from file and original placeholder
         stack<wxImage> undoStack;
         stack<wxImage> origImageStack;
 
@@ -59,12 +59,12 @@ class MyFrame : public wxFrame {
         void OnMouseUp(wxMouseEvent& event);
         void OnSelect(wxCommandEvent & event);
         void OnUnSelect(wxCommandEvent & event);
-
-
+        void ResetDimensionsToOriginal();
+        void UseOriginalImageIfNoTemp();
+        double getMeanOfHistogramRange(map<unsigned char, unsigned char> pixelValueMap, double start, double end);
     public:
         MyFrame(const wxString title, int xpos, int ypos, int width, int height);
         virtual ~MyFrame();
-        double getMeanOfHistogramRange(map<unsigned char, unsigned char> pixelValueMap, double start, double end);
         void OnExit(wxCommandEvent & event);
         void OnOpenFile(wxCommandEvent & event);
         void OnPaint(wxPaintEvent & event);

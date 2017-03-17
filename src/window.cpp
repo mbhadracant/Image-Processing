@@ -23,7 +23,7 @@ IMPLEMENT_APP(BasicApplication)
 bool BasicApplication::OnInit()
 {
     wxInitAllImageHandlers();
-    MyFrame* frame = new MyFrame(_("Basic Frame"), 50, 50, 800, 600);
+    MyFrame* frame = new MyFrame(_("Image Processing"), 50, 50, 800, 600);
     frame->Show(TRUE);
     SetTopWindow(frame);
     return TRUE;
@@ -69,15 +69,15 @@ MyFrame::MyFrame(const wxString title, int xpos, int ypos, int width, int height
     //###########################################################//
 
     lab4Menu = new wxMenu;
-    lab4Menu->Append(SCALE_IMAGE_ID, _T("&Scale image"));
-    menuBar->Append(lab4Menu, _T("&Pixel Scaling"));
+    lab4Menu->Append(SCALE_IMAGE_ID, _T("&Scale"));
+    lab4Menu->Append(PIXEL_SHIFT_ID, _T("&Shift"));
+    menuBar->Append(lab4Menu, _T("&Pixel"));
 
     //###########################################################//
     //----------------------END MY MENU -------------------------//
     //###########################################################//
 
     lab5Menu = new wxMenu;
-    lab5Menu->Append(PIXEL_SHIFT_ID, _T("&Pixel Shift"));
     lab5Menu->Append(AVERAGE_FILTER_ID, _T("&Average Filter"));
     lab5Menu->Append(WEIGHTED_AVERAGE_FILTER_ID, _T("&Weighted Average Filter"));
     lab5Menu->Append(FOUR_NEIGHBOUR_FILTER_ID, _T("&4 Neighbour LapLacian Filter"));
@@ -162,6 +162,22 @@ MyFrame::~MyFrame()
     }
 }
 
+void MyFrame::ResetDimensionsToOriginal() {
+  if(selected) {
+    selected = false;
+  }
+  mouseDownX = 0;
+  mouseDownY = 0;
+  mouseUpX = loadedImage.GetWidth();
+  mouseUpY = loadedImage.GetHeight();
+}
+
+void MyFrame::UseOriginalImageIfNoTemp() {
+  if (!tmpImage.Ok()) {
+    tmpImage = loadedImage.Copy();
+  }
+}
+
 void MyFrame::OnOpenFile(wxCommandEvent& WXUNUSED(event))
 {
 
@@ -184,10 +200,7 @@ void MyFrame::OnOpenFile(wxCommandEvent& WXUNUSED(event))
 
         if (loadedImage.Ok()) {
             origImage = loadedImage.Copy();
-            mouseDownX = 0;
-            mouseDownY = 0;
-            mouseUpX = loadedImage.GetWidth();
-            mouseUpY = loadedImage.GetHeight();
+            ResetDimensionsToOriginal();
             printf("Done! \n");
         }
         else {
@@ -208,7 +221,6 @@ void MyFrame::OnUndo(wxCommandEvent& WXUNUSED(event))
 {
     printf("Undoing...\n");
     if(undoStack.size() > 2) {
-
       undoStack.pop();
       loadedImage = undoStack.top();
       Refresh();
@@ -230,14 +242,13 @@ void MyFrame::OnScaleImage(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Scaling...\n");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
     float scaleFact = 0;
     double input = 0;
     unsigned char r, g, b;
-    //xFileDialog openFileDialog(this, _T("Open file"), _T(""), _T(""), FILETYPES, wxFD_OPEN, wxDefaultPosition);
-
     wxString valueTyped;
     wxTextEntryDialog myDialog(this, _("Enter the pixel scale factor:"), _("Pixel Scaling"), _(""));
+
     if (myDialog.ShowModal() == wxID_OK) {
         valueTyped = myDialog.GetValue();
         if (valueTyped.ToDouble(&input)) {
@@ -251,6 +262,8 @@ void MyFrame::OnScaleImage(wxCommandEvent& WXUNUSED(event))
     else {
         return;
     }
+
+
 
     for (int i = mouseDownX; i < mouseUpX; i++) {
         for (int j = mouseDownY; j < mouseUpY; j++) {
@@ -285,11 +298,14 @@ void MyFrame::OnScaleImage(wxCommandEvent& WXUNUSED(event))
                 newB);
         }
     }
-
+    ResetDimensionsToOriginal();
     tmpImage.Destroy();
+
     printf(" Finished scaling.\n");
     Refresh();
 }
+
+
 
 void MyFrame::OnOpenRawFile(wxCommandEvent& WXUNUSED(event))
 {
@@ -405,12 +421,12 @@ void MyFrame::OnResetImage(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Reseting image...\n");
+
     if (loadedImage.Ok()) {
         loadedImage.Destroy();
     }
 
     if (origImage.Ok()) {
-
         loadedImage = origImageStack.top();
         origImageStack.push(origImage);
         origImageStack.pop();
@@ -426,7 +442,7 @@ void MyFrame::OnPixelShift(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Pixel Shifting...\n");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
     long pixelShiftValue = 0;
     wxString valueTyped;
     wxTextEntryDialog myDialog(this, _("Enter the pixel shift value (-255 to 255):"), _("Pixel Shift"), _(""));
@@ -440,7 +456,7 @@ void MyFrame::OnPixelShift(wxCommandEvent& WXUNUSED(event))
         return;
     }
 
-    unsigned char r, g, b;
+    int r, g, b;
 
     for (int i = mouseDownX; i < mouseUpX; i++) {
         for (int j = mouseDownY; j < mouseUpY; j++) {
@@ -448,42 +464,26 @@ void MyFrame::OnPixelShift(wxCommandEvent& WXUNUSED(event))
             g = tmpImage.GetGreen(i, j); // green pixel value
             b = tmpImage.GetBlue(i, j); // blue pixel value
 
-            //printf("(%d,%d) [r = %d  | g = %d | b = %d] \n",i,j,(unsigned)r,(unsigned)g,(unsigned)b);
-            unsigned char newR, newG, newB;
+            r += pixelShiftValue;
+            g += pixelShiftValue;
+            b += pixelShiftValue;
 
-            if (pixelShiftValue > 0) {
-                if ((pixelShiftValue > 0) && (r > 255 - pixelShiftValue)) {
-                    newR = 255;
-                    newG = 255;
-                    newB = 255;
-                }
-                else {
-                    newR = pixelShiftValue + r;
-                    newG = pixelShiftValue + g;
-                    newB = pixelShiftValue + b;
-                }
-            }
+            r = (r > 255) ? 255 : r;
+            g = (g > 255) ? 255 : g;
+            b = (b > 255) ? 255 : b;
 
-            if (pixelShiftValue < 0) {
-                if ((pixelShiftValue < 0) && (r < 0 - pixelShiftValue)) {
-                    newR = 0;
-                    newG = 0;
-                    newB = 0;
-                }
-                else {
-                    newR = r + pixelShiftValue;
-                    newG = g + pixelShiftValue;
-                    newB = b + pixelShiftValue;
-                }
-            }
+            r = (r < 0) ? 0 : r;
+            g = (g < 0) ? 0 : g;
+            b = (b < 0) ? 0 : b;
 
-            loadedImage.SetRGB(i, j, newR,
-                newG,
-                newB);
+            loadedImage.SetRGB(i, j, r,
+                g,
+                b);
         }
     }
 
     tmpImage.Destroy();
+    ResetDimensionsToOriginal();
     printf(" Finished pixel shifting.\n");
     Refresh();
 }
@@ -492,7 +492,7 @@ void MyFrame::OnAverageFilter(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Average Filter..\n");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     float mask[3][3] = {
         { 1.0, 1.0, 1.0 },
@@ -558,6 +558,7 @@ void MyFrame::OnAverageFilter(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
+    ResetDimensionsToOriginal();
     printf(" Finished Average Filter.\n");
     Refresh();
 }
@@ -566,7 +567,7 @@ void MyFrame::OnWeightedAverageFilter(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Average Weighted Filter..\n");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     float mask[3][3] = {
         { 1.0, 2.0, 1.0 },
@@ -632,6 +633,7 @@ void MyFrame::OnWeightedAverageFilter(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
+    ResetDimensionsToOriginal();
     printf(" Finished Weighted Average Filter.\n");
     Refresh();
 }
@@ -640,7 +642,7 @@ void MyFrame::On4NeighbourFilter(wxCommandEvent& WXUNUSED(event))
 {
     printf("Starting on 4 neighbour filter...\n");
 
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     float mask[3][3] = {
         { 0, -1.0, 0 },
@@ -707,7 +709,7 @@ void MyFrame::On4NeighbourFilter(wxCommandEvent& WXUNUSED(event))
 void MyFrame::On8NeighbourFilter(wxCommandEvent& WXUNUSED(event))
 {
     printf("Starting on 8 neighbour filter...\n");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     float mask[3][3] = {
         { -1.0, -1.0, -1.0 },
@@ -767,6 +769,7 @@ void MyFrame::On8NeighbourFilter(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
+    ResetDimensionsToOriginal();
     printf("Finished 8 neighbour filter.\n");
     Refresh();
 }
@@ -774,7 +777,7 @@ void MyFrame::On8NeighbourFilter(wxCommandEvent& WXUNUSED(event))
 void MyFrame::On4NeighbourLaplacianEnhancementFilter(wxCommandEvent& WXUNUSED(event))
 {
     printf("Starting on 4 neighbour laplacian filter...\n");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     float mask[3][3] = {
         { 0, -1.0, 0 },
@@ -782,8 +785,8 @@ void MyFrame::On4NeighbourLaplacianEnhancementFilter(wxCommandEvent& WXUNUSED(ev
         { 0, -1.0, 0 },
     };
 
-    for (int i = mouseDownX; i < mouseUpX - 1; i++) {
-        for (int j = mouseDownY; j < mouseUpY - 1; j++) {
+    for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
+        for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
 
             float sumR = 0;
 
@@ -834,6 +837,7 @@ void MyFrame::On4NeighbourLaplacianEnhancementFilter(wxCommandEvent& WXUNUSED(ev
     }
 
     tmpImage.Destroy();
+    ResetDimensionsToOriginal();
     printf("Finished 4 neighbour laplacian filter.\n");
     Refresh();
 }
@@ -841,7 +845,7 @@ void MyFrame::On4NeighbourLaplacianEnhancementFilter(wxCommandEvent& WXUNUSED(ev
 void MyFrame::On8NeighbourLaplacianEnhancementFilter(wxCommandEvent& WXUNUSED(event))
 {
     printf("Starting on 8 neighbour laplacian filter...\n");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     float mask[3][3] = {
         { -1.0, -1.0, -1.0 },
@@ -901,6 +905,7 @@ void MyFrame::On8NeighbourLaplacianEnhancementFilter(wxCommandEvent& WXUNUSED(ev
     }
 
     tmpImage.Destroy();
+    ResetDimensionsToOriginal();
     printf("Finished 8 neighbour laplacian filter.\n");
     Refresh();
 }
@@ -909,7 +914,7 @@ void MyFrame::OnRobertsFilter(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Applying Roberts Filter...\n");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     float mask1[3][3] = {
         { 0, 0, 0 },
@@ -974,7 +979,7 @@ void MyFrame::OnRobertsFilter(wxCommandEvent& WXUNUSED(event))
         { 0, 0, 1.0 },
     };
 
-    tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
         for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
@@ -1028,6 +1033,7 @@ void MyFrame::OnRobertsFilter(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
+    ResetDimensionsToOriginal();
     printf("Finished Applying Roberts Filter.\n");
     Refresh();
 }
@@ -1036,7 +1042,7 @@ void MyFrame::OnSobelXFilter(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Applying Sobel X Filter...\n");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     float mask[3][3] = {
         { -1.0, 0, 1 },
@@ -1096,6 +1102,7 @@ void MyFrame::OnSobelXFilter(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
+    ResetDimensionsToOriginal();
     printf("Finished Applying Sobel X Filter.\n");
     Refresh();
 }
@@ -1104,7 +1111,7 @@ void MyFrame::OnSobelYFilter(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Applying Sobel Y Filter...\n");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     float mask[3][3] = {
         { -1.0, -2.0, -1.0 },
@@ -1164,6 +1171,7 @@ void MyFrame::OnSobelYFilter(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
+    ResetDimensionsToOriginal();
     printf("Finished Applying Sobel Y Filter.\n");
     Refresh();
 }
@@ -1186,7 +1194,7 @@ void MyFrame::OnSaltAndPepper(wxCommandEvent& WXUNUSED(event))
             }
         }
     }
-
+    ResetDimensionsToOriginal();
     printf("Finished Applying Salt And Pepper.\n");
     Refresh();
 }
@@ -1195,8 +1203,7 @@ void MyFrame::OnMinFilter(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Applying Min Filter...");
-    wxImage tmpImage = loadedImage.Copy();
-
+    UseOriginalImageIfNoTemp();
     for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
         for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
 
@@ -1241,7 +1248,7 @@ void MyFrame::OnMinFilter(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
-
+    ResetDimensionsToOriginal();
     printf("Finished Applying Min Filter.\n");
     Refresh();
 }
@@ -1250,7 +1257,7 @@ void MyFrame::OnMaxFilter(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Applying Max Filter...");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
         for (int j = mouseDownY + 1; j < mouseUpY -1; j++) {
@@ -1296,7 +1303,7 @@ void MyFrame::OnMaxFilter(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
-
+    ResetDimensionsToOriginal();
     printf("Finished Applying Max Filter.\n");
     Refresh();
 }
@@ -1305,7 +1312,7 @@ void MyFrame::OnMidpointFilter(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Applying Midpoint Filter...");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
         for (int j = mouseDownY + 1; j < mouseUpY -1; j++) {
@@ -1390,7 +1397,7 @@ void MyFrame::OnMidpointFilter(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
-
+    ResetDimensionsToOriginal();
     printf("Finished Midpoint Filter.\n");
     Refresh();
 }
@@ -1399,7 +1406,7 @@ void MyFrame::OnMedianFilter(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Applying Median Filter...");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     for (int i = mouseDownX + 1; i < mouseUpX - 1; i++) {
         for (int j = mouseDownY + 1; j < mouseUpY - 1; j++) {
@@ -1452,7 +1459,7 @@ void MyFrame::OnMedianFilter(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
-
+    ResetDimensionsToOriginal();
     printf("Finished Applying Median Filter.\n");
     Refresh();
 }
@@ -1461,8 +1468,7 @@ void MyFrame::OnNegative(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Applying Negative Filter...");
-    wxImage tmpImage = loadedImage.Copy();
-
+    UseOriginalImageIfNoTemp();
     for (int i = mouseDownX; i < mouseUpX; i++) {
         for (int j = mouseDownY; j < mouseUpY; j++) {
             loadedImage.SetRGB(i, j, 255 - tmpImage.GetRed(i,j), 255 - tmpImage.GetGreen(i,j), 255 - tmpImage.GetBlue(i,j));
@@ -1470,7 +1476,7 @@ void MyFrame::OnNegative(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
-
+    ResetDimensionsToOriginal();
     printf("Finished Negative Filter.\n");
     Refresh();
 }
@@ -1483,6 +1489,7 @@ void MyFrame::OnLog(wxCommandEvent& WXUNUSED(event))
     long constant = 0;
     wxString valueTyped;
     wxTextEntryDialog myDialog(this, _("Enter the Constant Value:"), _("Log Filter"), _(""));
+
     if (myDialog.ShowModal() == wxID_OK) {
         valueTyped = myDialog.GetValue();
         if (!valueTyped.ToLong(&constant)) {
@@ -1494,18 +1501,19 @@ void MyFrame::OnLog(wxCommandEvent& WXUNUSED(event))
     }
 
 
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
+
     for (int i = mouseDownX; i < mouseUpX; i++) {
         for (int j = mouseDownY; j < mouseUpY; j++) {
-            unsigned char r = loadedImage.GetRed(i, j);
+            unsigned char r = tmpImage.GetRed(i, j);
             long newR = constant * log(r + 1);
             newR = (newR > 255) ? 255 : newR;
 
-            unsigned char g = loadedImage.GetGreen(i, j);
+            unsigned char g = tmpImage.GetGreen(i, j);
             long newG = constant * log(g + 1);
             newG = (newG > 255) ? 255 : newG;
 
-            unsigned char b = loadedImage.GetBlue(i, j);
+            unsigned char b = tmpImage.GetBlue(i, j);
             long newB  = constant * log(b + 1);
             newB = (newB > 255) ? 255 : newR;
 
@@ -1514,7 +1522,7 @@ void MyFrame::OnLog(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
-
+    ResetDimensionsToOriginal();
     printf("Finished Log Filter.\n");
     Refresh();
 }
@@ -1547,20 +1555,20 @@ void MyFrame::OnPower(wxCommandEvent& WXUNUSED(event))
   }
 
     printf("Applying Pow Filter...");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
 
     for (int i = mouseDownX; i < mouseUpX; i++) {
         for (int j = mouseDownY; j < mouseUpY; j++) {
 
-            unsigned char r = loadedImage.GetRed(i, j);
+            unsigned char r = tmpImage.GetRed(i, j);
             long newR = constant * pow((r), gamma);
             newR = (newR > 255) ? 255 : newR;
 
-            unsigned char g = loadedImage.GetGreen(i, j);
+            unsigned char g = tmpImage.GetGreen(i, j);
             long newG = constant * pow((g), gamma);
             newG = (newG > 255) ? 255 : newG;
 
-            unsigned char b = loadedImage.GetBlue(i, j);
+            unsigned char b = tmpImage.GetBlue(i, j);
             long newB  = constant * pow((b), gamma);
             newB = (newB > 255) ? 255 : newR;
 
@@ -1570,7 +1578,7 @@ void MyFrame::OnPower(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
-
+    ResetDimensionsToOriginal();
     printf("Finished Applying Pow Filter.\n");
     Refresh();
 }
@@ -1579,7 +1587,7 @@ void MyFrame::OnRandomLookupTable(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Applying Random Lookup Table...");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
     map<unsigned char, unsigned char> redPixelMap;
     map<unsigned char, unsigned char> greenPixelMap;
     map<unsigned char, unsigned char> bluePixelMap;
@@ -1589,9 +1597,9 @@ void MyFrame::OnRandomLookupTable(wxCommandEvent& WXUNUSED(event))
         for (int j = mouseDownY; j < mouseUpY; j++) {
             unsigned char r,g,b;
 
-            r = loadedImage.GetRed(i,j);
-            g = loadedImage.GetGreen(i,j);
-            b = loadedImage.GetBlue(i,j);
+            r = tmpImage.GetRed(i,j);
+            g = tmpImage.GetGreen(i,j);
+            b = tmpImage.GetBlue(i,j);
 
             if(redPixelMap.count(r) == 0) {
               redPixelMap[r] = rand() % 256;
@@ -1609,7 +1617,7 @@ void MyFrame::OnRandomLookupTable(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
-
+    ResetDimensionsToOriginal();
     printf("Finished Applying Random Lookup Table.\n");
     Refresh();
 }
@@ -1618,7 +1626,7 @@ void MyFrame::OnHistogramEqualize(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Applying Histogram Equalization...");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
     map<int, double> redPixelMap;
     map<int, double> greenPixelMap;
     map<int, double> bluePixelMap;
@@ -1628,9 +1636,9 @@ void MyFrame::OnHistogramEqualize(wxCommandEvent& WXUNUSED(event))
     for (int i = mouseDownX; i < mouseUpX; i++) {
         for (int j = mouseDownY; j < mouseUpY; j++) {
 
-            int r = loadedImage.GetRed(i, j);
-            int g = loadedImage.GetGreen(i, j);
-            int b = loadedImage.GetBlue(i, j);
+            int r = tmpImage.GetRed(i, j);
+            int g = tmpImage.GetGreen(i, j);
+            int b = tmpImage.GetBlue(i, j);
 
             redPixelMap[r] = (redPixelMap.count(r) > 0) ? redPixelMap[r] + 1 : 1;
             greenPixelMap[g] = (greenPixelMap.count(g) > 0) ? greenPixelMap[g] + 1 : 1;
@@ -1670,9 +1678,9 @@ void MyFrame::OnHistogramEqualize(wxCommandEvent& WXUNUSED(event))
     for (int i = mouseDownX; i < mouseUpX; i++) {
         for (int j = mouseDownY; j < mouseUpY; j++) {
 
-            int r = loadedImage.GetRed(i, j);
-            int g = loadedImage.GetGreen(i, j);
-            int b = loadedImage.GetBlue(i, j);
+            int r = tmpImage.GetRed(i, j);
+            int g = tmpImage.GetGreen(i, j);
+            int b = tmpImage.GetBlue(i, j);
 
             int newR = (redPixelMap.count(r) > 0) ? redPixelMap[r] : r;
             int newG = (greenPixelMap.count(g) > 0) ? greenPixelMap[g] : g;
@@ -1684,7 +1692,7 @@ void MyFrame::OnHistogramEqualize(wxCommandEvent& WXUNUSED(event))
     }
 
     tmpImage.Destroy();
-
+    ResetDimensionsToOriginal();
     printf("Finished Applying Histogram Equalization.\n");
     Refresh();
 }
@@ -1693,7 +1701,7 @@ void MyFrame::OnMeanAndStandardDeviation(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Finding Mean And Standard Deviation...\n");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
     map<unsigned char, unsigned char> pixelValMap;
 
     int count = 0;
@@ -1701,7 +1709,7 @@ void MyFrame::OnMeanAndStandardDeviation(wxCommandEvent& WXUNUSED(event))
     for (int i = mouseDownX; i < mouseUpX; i++) {
         for (int j = mouseDownY; j < mouseUpY; j++) {
 
-            int originalPixel = loadedImage.GetRed(i, j);
+            int originalPixel = tmpImage.GetRed(i, j);
 
             if (pixelValMap.count(originalPixel) > 0) {
                 pixelValMap[originalPixel] = pixelValMap[originalPixel] + 1;
@@ -1733,7 +1741,6 @@ void MyFrame::OnMeanAndStandardDeviation(wxCommandEvent& WXUNUSED(event))
     standardDeviation *= 1.0 / (double)count;
 
     printf("Standard Deviation is:%f \n", standardDeviation);
-    tmpImage.Destroy();
     Refresh();
 }
 
@@ -1741,7 +1748,7 @@ void MyFrame::OnSimpleThresholding(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Applying Simple Thresholding\n");
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
     long threshold = 0;
     wxString valueTyped;
     wxTextEntryDialog myDialog(this, _("Enter the threshold value (0 to 255):"), _("Simple Threshold Value"), _(""));
@@ -1760,9 +1767,9 @@ void MyFrame::OnSimpleThresholding(wxCommandEvent& WXUNUSED(event))
     for (int i = mouseDownX; i < mouseUpX; i++) {
         for (int j = mouseDownY; j < mouseUpY; j++) {
 
-            r = loadedImage.GetRed(i, j);
-            g = loadedImage.GetGreen(i, j);
-            b = loadedImage.GetBlue(i, j);
+            r = tmpImage.GetRed(i, j);
+            g = tmpImage.GetGreen(i, j);
+            b = tmpImage.GetBlue(i, j);
 
             r = threshold > r ? 255 : 0;
             g = threshold > g ? 255 : 0;
@@ -1771,7 +1778,8 @@ void MyFrame::OnSimpleThresholding(wxCommandEvent& WXUNUSED(event))
             loadedImage.SetRGB(i, j, r, g, b);
         }
     }
-
+    tmpImage.Destroy();
+    ResetDimensionsToOriginal();
     printf("Finished Applying Simple Thresholding.\n");
     Refresh();
 }
@@ -1781,7 +1789,7 @@ void MyFrame::OnAutomatedThresholding(wxCommandEvent& WXUNUSED(event))
 
     printf("Applying Automated Thresholding...\n");
 
-    wxImage tmpImage = loadedImage.Copy();
+    UseOriginalImageIfNoTemp();
     map<unsigned char, unsigned char> redPixelMap;
     map<unsigned char, unsigned char> greenPixelMap;
     map<unsigned char, unsigned char> bluePixelMap;
@@ -1791,9 +1799,9 @@ void MyFrame::OnAutomatedThresholding(wxCommandEvent& WXUNUSED(event))
     for (int i = mouseDownX; i < mouseUpX; i++) {
         for (int j = mouseDownY; j < mouseUpY; j++) {
 
-          int r = loadedImage.GetRed(i, j);
-          int g = loadedImage.GetGreen(i, j);
-          int b = loadedImage.GetBlue(i, j);
+          int r = tmpImage.GetRed(i, j);
+          int g = tmpImage.GetGreen(i, j);
+          int b = tmpImage.GetBlue(i, j);
 
 
           redPixelMap[r] = (redPixelMap.count(r) > 0) ? redPixelMap[r] + 1 : 1;
@@ -1876,9 +1884,9 @@ void MyFrame::OnAutomatedThresholding(wxCommandEvent& WXUNUSED(event))
     for (int i = mouseDownX; i < mouseUpX; i++) {
         for (int j = mouseDownY; j < mouseUpY; j++) {
 
-            r = loadedImage.GetRed(i, j);
-            g = loadedImage.GetGreen(i, j);
-            b = loadedImage.GetBlue(i, j);
+            r = tmpImage.GetRed(i, j);
+            g = tmpImage.GetGreen(i, j);
+            b = tmpImage.GetBlue(i, j);
 
             r = redThreshold > r ? 255 : 0;
             g = greenThreshold > g ? 255 : 0;
@@ -1888,6 +1896,8 @@ void MyFrame::OnAutomatedThresholding(wxCommandEvent& WXUNUSED(event))
         }
     }
 
+    tmpImage.Destroy();
+    ResetDimensionsToOriginal();
     printf("Finished Applying Automated Thresholding.\n");
     Refresh();
 }
@@ -1921,75 +1931,75 @@ void MyFrame::OnMouseDown(wxMouseEvent& event)
     mouseDownY = event.GetPosition().y;
     event.Skip();
   }
+
 }
 
 void MyFrame::OnMouseUp(wxMouseEvent& event)
 {
-
   if(canSelect) {
   mouseUpX = event.GetPosition().x;
   mouseUpY = event.GetPosition().y;
 
-    for (int i = mouseDownX; i < mouseUpX && mouseDownX < loadedImage.GetWidth() && mouseUpX < loadedImage.GetWidth(); i++) {
-        loadedImage.SetRGB(i, mouseDownY, 255, 255, 255);
+  if(mouseDownX > loadedImage.GetWidth() || mouseUpX > loadedImage.GetWidth()) {
+    wxMessageBox("Please select a region within the image");
+    return;
+  }
+
+  if(mouseDownY > loadedImage.GetHeight() || mouseUpY > loadedImage.GetHeight()) {
+    wxMessageBox("Please select a region within the image");
+    return;
+  }
+
+    tmpImage = loadedImage.Copy();
+    unsigned char r, g, b;
+
+    for(int i = mouseDownX + 1; i <= mouseUpX - 1; i++) {
+      for(int j = mouseDownY + 1; j <= mouseUpY - 1; j++) {
+
+          r = loadedImage.GetRed(i, j);
+          g = loadedImage.GetGreen(i, j);
+          b = loadedImage.GetBlue(i, j);
+          if(b + 30 > 255) {
+            b = 255;
+          } else {
+            b += 30;
+          }
+          loadedImage.SetRGB(i,j, r, g , b);
+      }
     }
 
-    for (int i = mouseDownY; i < mouseUpY && mouseDownY < loadedImage.GetHeight() && mouseUpY < loadedImage.GetHeight();  i++) {
-        loadedImage.SetRGB(mouseDownX, i, 255, 255, 255);
-    }
-
-    for(int i = mouseDownY; i <  mouseUpY && mouseDownY < loadedImage.GetHeight() && mouseUpY < loadedImage.GetHeight(); i++) {
-      loadedImage.SetRGB(mouseUpX, i, 255, 255, 255);
-    }
-
-    for(int i = mouseDownX; i <  mouseUpX && mouseDownX < loadedImage.GetWidth() && mouseUpX < loadedImage.GetWidth(); i++) {
-      loadedImage.SetRGB(i, mouseUpY, 255, 255, 255);
-    }
-
-
-    for (int i = mouseDownX; i < mouseUpX && mouseDownX < loadedImage.GetWidth() && mouseUpX < loadedImage.GetWidth(); i++) {
-        loadedImage.SetRGB(i, mouseDownY, 255, 255, 255);
-    }
-
-    for (int i = mouseDownY; i < mouseUpY && mouseDownY < loadedImage.GetHeight() && mouseUpY < loadedImage.GetHeight();  i++) {
-        loadedImage.SetRGB(mouseDownX, i, 255, 255, 255);
-    }
-
-    for(int i = mouseDownY; i <  mouseUpY && mouseDownY < loadedImage.GetHeight() && mouseUpY < loadedImage.GetHeight(); i++) {
-      loadedImage.SetRGB(mouseUpX, i, 255, 255, 255);
-    }
-
-    for(int i = mouseDownX; i <  mouseUpX && mouseDownX < loadedImage.GetWidth() && mouseUpX < loadedImage.GetWidth(); i++) {
-      loadedImage.SetRGB(i, mouseUpY, 255, 255, 255);
-    }
-
-
-    canSelect = false;
+    menuBar->Enable(true);
     Refresh();
+    event.Skip();
+    selected = true;
+    canSelect = false;
 }
-  event.Skip();
+
 
 }
 
 void MyFrame::OnSelect(wxCommandEvent& WXUNUSED(event))
 {
 
+    if(selected) {
+      wxMessageBox( wxT("Region of interest is already selected") );
+      return;
+    }
     printf("Waiting for user to select...");
-    canSelect = true;
 
     wxMessageBox( wxT("Please drag your mouse to select a region of the image") );
     printf("Finished selecting.\n");
     Refresh();
+    menuBar->Enable(false);
+    canSelect = true;
 }
 
 void MyFrame::OnUnSelect(wxCommandEvent& WXUNUSED(event))
 {
 
     printf("Unselected");
-    mouseDownX = 0;
-    mouseDownY = 0;
-    mouseUpX = loadedImage.GetWidth();
-    mouseUpY = loadedImage.GetHeight();
+    ResetDimensionsToOriginal();
+    loadedImage = tmpImage.Copy();
     Refresh();
 }
 
@@ -2014,7 +2024,6 @@ void MyFrame::OnExit(wxCommandEvent& WXUNUSED(event))
 
 void MyFrame::OnPaint(wxPaintEvent& WXUNUSED(event))
 {
-
     wxAutoBufferedPaintDC dc(this);
     if (loadedImage.Ok()) {
         undoStack.push(loadedImage.Copy());
